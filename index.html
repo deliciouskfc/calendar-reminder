@@ -1816,17 +1816,28 @@ setInterval(checkReminders, 15000);
 checkReminders();
 
 /* ================================================================
-   开屏动画隐藏
+   开屏动画隐藏（三重保险：DOMContentLoaded / load / 兜底超时）
 ================================================================ */
-window.addEventListener('load', () => {
-  setTimeout(() => {
-    const splash = document.getElementById('splashScreen');
-    if (splash) {
-      splash.classList.add('hide');
-      setTimeout(() => splash.remove(), 700);
-    }
-  }, 1200);
-});
+function hideSplash() {
+  const splash = document.getElementById('splashScreen');
+  if (splash) {
+    splash.classList.add('hide');
+    setTimeout(() => splash.remove(), 700);
+  }
+}
+// 1) DOM 就绪即隐藏（不等图片等资源加载）
+if (document.readyState !== 'loading') {
+  setTimeout(hideSplash, 800);
+} else {
+  document.addEventListener('DOMContentLoaded', () => setTimeout(hideSplash, 800));
+}
+// 2) load 事件后再隐藏一次（兜底）
+window.addEventListener('load', () => setTimeout(hideSplash, 1200));
+// 3) 绝对兜底：3 秒后强制移除，无论任何情况
+setTimeout(() => {
+  const s = document.getElementById('splashScreen');
+  if (s) s.remove();
+}, 3000);
 
 /* ================================================================
    应用内版本检查与更新
@@ -1904,6 +1915,14 @@ if ('serviceWorker' in navigator) {
         });
       });
     }).catch(() => {});
+  });
+  // 强制注销所有旧 Service Worker（解决 v1 缓存卡死问题）
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => {
+      if (r.active && r.active.scriptURL.endsWith('sw.js')) {
+        caches.keys().then(keys => keys.forEach(k => { if (k !== 'calendar-v2') caches.delete(k); }));
+      }
+    });
   });
 }
 </script>
