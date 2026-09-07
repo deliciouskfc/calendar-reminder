@@ -15,7 +15,8 @@
     { "name": "CEC 1000-L08", "weekday": 5, "start": "14:30", "end": "17:20", "location": "Teaching Complex C203", "type": "Lecture" },
     { "name": "CHI 1000-L19", "weekday": 1, "start": "15:30", "end": "16:50", "location": "Teaching B 304", "type": "Lecture" },
     { "name": "CHI 1000-L19", "weekday": 3, "start": "15:30", "end": "16:50", "location": "Teaching B 304", "type": "Lecture" },
-    { "name": "DAI 1000-L05", "weekday": 3, "start": "08:30", "end": "09:20", "location": "Teaching C 106", "type": "Lecture" }
+    { "name": "DAI 1000-L05", "weekday": 3, "start": "08:30", "end": "09:20", "location": "Teaching C 106", "type": "Lecture" },
+    { "name": "PED 1109-L01", "weekday": 2, "start": "08:30", "end": "10:20", "location": "Track Field", "type": "Lecture" }
   ],
   "special_dates": [
     { "date": "2026-10-23", "type": "exam", "name": "CSC考试" }

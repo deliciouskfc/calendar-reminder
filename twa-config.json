@@ -1,0 +1,18 @@
+{
+  "manifestUrl": "https://deliciouskfc.github.io/calendar-reminder/manifest.json",
+  "package": {
+    "name": "com.calendar.app",
+    "displayName": "日历课表",
+    "version": "1.0.0",
+    "versionCode": 1
+  },
+  "playStore": {
+    "enabled": false
+  },
+  "signing": {
+    "path": "./android.keystore",
+    "alias": "android",
+    "storePassword": "android",
+    "keyPassword": "android"
+  }
+}
