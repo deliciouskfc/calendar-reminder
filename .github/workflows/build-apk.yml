@@ -25,19 +25,11 @@ jobs:
       - name: Build APK
         run: cd android && expect -c 'set timeout 300; spawn bubblewrap build; expect { -re {(?i)agreement|license} { send "y\r"; exp_continue } -re {(?i)download|install} { send "y\r"; exp_continue } -re {(?i)signing|keystore|password} { send "\r"; exp_continue } eof }'
 
-      - name: Debug - find APK location
-        run: |
-          echo "=== pwd ==="
-          pwd
-          echo "=== find all apk/aab ==="
-          find . -type f \( -name "*.apk" -o -name "*.aab" \)
-          echo "=== ls android ==="
-          ls -la android/
-          echo "=== ls android/app if exists ==="
-          ls -la android/app/ 2>/dev/null || echo "no app dir"
+      - name: Find and upload APK
+        run: find / -type f -name "*.apk" 2>/dev/null | head -5 && cp /tmp/android_app/build/outputs/apk/release/app-release-signed.apk ./calendar.apk 2>/dev/null || cp android/build/outputs/apk/release/*.apk ./calendar.apk 2>/dev/null || cp android/app/build/outputs/apk/release/*.apk ./calendar.apk 2>/dev/null || (find . -name "*.apk" 2>/dev/null -exec cp {} ./calendar.apk \;) && ls -la calendar.apk
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: calendar-apk
-          path: ./*.apk
+          path: calendar.apk
