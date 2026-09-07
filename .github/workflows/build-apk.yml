@@ -34,7 +34,7 @@ jobs:
       - name: Create TWA project manually
         run: |
           mkdir -p android
-          cat > android/twa-manifest.json << 'MANIFEST'
+          cat > android/twa-manifest.json << MANIFEST
           {
             "packageId": "com.calendar.app",
             "host": "deliciouskfc.github.io",
@@ -50,15 +50,15 @@ jobs:
             "backgroundColor": "#f5f7fa",
             "enableNotifications": true,
             "startUrl": "/calendar-reminder/index.html",
-            "iconUrl": "https://deliciouskfc.github.io/calendar-reminder/icon-512.png",
-            "maskableIconUrl": "https://deliciouskfc.github.io/calendar-reminder/icon-512.png",
+            "iconUrl": "https://raw.githubusercontent.com/deliciouskfc/calendar-reminder/${GITHUB_SHA}/icon-512.png",
+            "maskableIconUrl": "https://raw.githubusercontent.com/deliciouskfc/calendar-reminder/${GITHUB_SHA}/icon-512.png",
             "splashScreenFadeOutDuration": 300,
             "signingKey": {
               "path": "/tmp/android.keystore",
               "alias": "android"
             },
             "appVersionName": "1.1.1",
-            "appVersionCode": 3,
+            "appVersionCode": 5,
             "sdkVersion": "34",
             "enableSiteSettingsShortcut": false,
             "features": []
@@ -80,6 +80,8 @@ jobs:
           expect {
             -exact "Do you want Bubblewrap to install the JDK" { send "n\r"; exp_continue }
             -exact "Path to your existing JDK" { send "$env(JAVA_HOME)\r"; exp_continue }
+            -exact "versionCode for the new App version" { send "5\r"; exp_continue }
+            -exact "versionName for the new App version" { send "1.1.1\r"; exp_continue }
             -re {\(y/N\)|\(Y/n\)} { send "y\r"; exp_continue }
             -exact "password" { send "android\r"; exp_continue }
             -exact "Password" { send "android\r"; exp_continue }
