@@ -17,7 +17,7 @@
     { "name": "CHI 1000-L19", "weekday": 3, "start": "15:30", "end": "16:50", "location": "Teaching B Bldg 304", "type": "Lecture", "instructor": "W. WONG", "crn": "2825" },
     { "name": "DAI 1000-L05", "weekday": 3, "start": "08:30", "end": "09:20", "location": "Teaching C Bldg 106", "type": "Lecture", "instructor": "R. LIAO", "crn": "4257" },
     { "name": "PED 1109-L01", "weekday": 2, "start": "08:30", "end": "10:20", "location": "Track Field", "type": "Lecture", "instructor": "Y. ZHANG", "crn": "4290" },
-    { "name": "⏰ 提醒测试", "weekday": 2, "start": "01:10", "end": "01:15", "location": "测试", "type": "Test", "instructor": "测试", "crn": "0000" }
+    { "name": "⏰ 提醒测试", "weekday": 2, "start": "01:20", "end": "01:25", "location": "测试", "type": "Test", "instructor": "测试", "crn": "0000" }
   ],
   "special_dates": [
     { "date": "2026-10-23", "type": "exam", "name": "CSC考试" }
