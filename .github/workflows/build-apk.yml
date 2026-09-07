@@ -28,8 +28,8 @@ jobs:
       - name: Install expect
         run: sudo apt-get update && sudo apt-get install -y expect
 
-      - name: Generate signing keystore
-        run: keytool -genkeypair -v -keystore /tmp/android.keystore -storepass android -alias android -keypass android -dname "CN=Calendar, OU=Calendar, O=Calendar, L=HK, S=HK, C=HK" -keyalg RSA -keysize 2048 -validity 10000
+      - name: Use committed signing keystore
+        run: cp calendar.keystore /tmp/android.keystore
 
       - name: Create TWA project manually
         run: |
@@ -57,8 +57,8 @@ jobs:
               "path": "/tmp/android.keystore",
               "alias": "android"
             },
-            "appVersionName": "1.1.0",
-            "appVersionCode": 2,
+            "appVersionName": "1.1.1",
+            "appVersionCode": 3,
             "sdkVersion": "34",
             "enableSiteSettingsShortcut": false,
             "features": []
