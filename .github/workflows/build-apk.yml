@@ -20,13 +20,10 @@ jobs:
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
 
-      - name: Configure Bubblewrap
+      - name: Configure Bubblewrap + auto-install SDK
         run: |
           mkdir -p ~/.bubblewrap
-          echo '{
-            "jdkPath": "$JAVA_HOME",
-            "androidSdkPath": "$ANDROID_HOME"
-          }' > ~/.bubblewrap/config.json
+          printf '{\n  "jdkPath": "%s",\n  "androidSdkPath": "%s"\n}\n' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
           echo "y" | bubblewrap doctor || true
 
       - name: Generate signing key
@@ -43,7 +40,8 @@ jobs:
 
       - name: Initialize TWA project
         run: |
-          echo "1" | bubblewrap init \
+          mkdir -p android
+          printf "y\ny\ny\ny\ny\n" | bubblewrap init \
             --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" \
             --directory="android"
 
