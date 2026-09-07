@@ -1,22 +1,22 @@
 {
   "_comment": "CUHK 2026-27 课表 - 由日历应用导出，星期: 1=周一..7=周日",
   "courses": [
-    { "name": "CSC 1001-L02", "weekday": 1, "start": "10:30", "end": "11:50", "location": "Teaching B 103", "type": "Lecture" },
-    { "name": "CSC 1001-L02", "weekday": 3, "start": "10:30", "end": "11:50", "location": "Teaching B 103", "type": "Lecture" },
-    { "name": "CSC 1001-T04", "weekday": 2, "start": "18:00", "end": "18:50", "location": "Teaching Complex C504", "type": "Tutorial" },
-    { "name": "ECO 2011-L02", "weekday": 1, "start": "13:30", "end": "14:50", "location": "Teaching Complex C402", "type": "Lecture" },
-    { "name": "ECO 2011-L02", "weekday": 3, "start": "13:30", "end": "14:50", "location": "Teaching Complex C402", "type": "Lecture" },
-    { "name": "ECO 2011-T01", "weekday": 1, "start": "18:00", "end": "18:50", "location": "Teaching A 107", "type": "Tutorial" },
-    { "name": "ENG 1001-L07", "weekday": 2, "start": "13:30", "end": "14:50", "location": "Teaching D 108", "type": "Lecture" },
-    { "name": "ENG 1001-L07", "weekday": 4, "start": "13:30", "end": "14:50", "location": "Teaching D 108", "type": "Lecture" },
-    { "name": "MAT 1001-L01", "weekday": 2, "start": "10:30", "end": "12:20", "location": "Teaching Complex C201", "type": "Lecture" },
-    { "name": "MAT 1001-L01", "weekday": 4, "start": "10:30", "end": "12:20", "location": "Teaching Complex C201", "type": "Lecture" },
-    { "name": "MAT 1001-T04", "weekday": 2, "start": "19:30", "end": "20:50", "location": "Teaching A 301", "type": "Tutorial" },
-    { "name": "CEC 1000-L08", "weekday": 5, "start": "14:30", "end": "17:20", "location": "Teaching Complex C203", "type": "Lecture" },
-    { "name": "CHI 1000-L19", "weekday": 1, "start": "15:30", "end": "16:50", "location": "Teaching B 304", "type": "Lecture" },
-    { "name": "CHI 1000-L19", "weekday": 3, "start": "15:30", "end": "16:50", "location": "Teaching B 304", "type": "Lecture" },
-    { "name": "DAI 1000-L05", "weekday": 3, "start": "08:30", "end": "09:20", "location": "Teaching C 106", "type": "Lecture" },
-    { "name": "PED 1109-L01", "weekday": 2, "start": "08:30", "end": "10:20", "location": "Track Field", "type": "Lecture" }
+    { "name": "CSC 1001-L02", "weekday": 1, "start": "10:30", "end": "11:50", "location": "Teaching B Bldg 103", "type": "Lecture", "instructor": "T. LI", "crn": "3318" },
+    { "name": "CSC 1001-L02", "weekday": 3, "start": "10:30", "end": "11:50", "location": "Teaching B Bldg 103", "type": "Lecture", "instructor": "T. LI", "crn": "3318" },
+    { "name": "CSC 1001-T04", "weekday": 2, "start": "18:00", "end": "18:50", "location": "Teaching Complex C504", "type": "Tutorial", "instructor": "一. 张", "crn": "3325" },
+    { "name": "ECO 2011-L02", "weekday": 1, "start": "13:30", "end": "14:50", "location": "Teaching Complex C402", "type": "Lecture", "instructor": "B. CHUNG", "crn": "2751" },
+    { "name": "ECO 2011-L02", "weekday": 3, "start": "13:30", "end": "14:50", "location": "Teaching Complex C402", "type": "Lecture", "instructor": "B. CHUNG", "crn": "2751" },
+    { "name": "ECO 2011-T01", "weekday": 1, "start": "18:00", "end": "18:50", "location": "Teaching A Bldg 107", "type": "Tutorial", "instructor": "W. LIANG", "crn": "2761" },
+    { "name": "ENG 1001-L15", "weekday": 2, "start": "13:30", "end": "14:50", "location": "Teaching D Bldg 109", "type": "Lecture", "instructor": "Q. WANG", "crn": "2850" },
+    { "name": "ENG 1001-L15", "weekday": 4, "start": "13:30", "end": "14:50", "location": "Teaching D Bldg 109", "type": "Lecture", "instructor": "Q. WANG", "crn": "2850" },
+    { "name": "MAT 1001-L05", "weekday": 2, "start": "10:30", "end": "12:20", "location": "Teaching Complex C301", "type": "Lecture", "instructor": "K. FANG", "crn": "3035" },
+    { "name": "MAT 1001-L05", "weekday": 4, "start": "10:30", "end": "12:20", "location": "Teaching Complex C301", "type": "Lecture", "instructor": "K. FANG", "crn": "3035" },
+    { "name": "MAT 1001-T20", "weekday": 5, "start": "19:30", "end": "20:50", "location": "Teaching A Bldg 301", "type": "Tutorial", "instructor": "员工", "crn": "3060" },
+    { "name": "CEC 1000-L08", "weekday": 5, "start": "14:30", "end": "17:20", "location": "Teaching Complex C203", "type": "Lecture", "instructor": "J. YANG", "crn": "3783" },
+    { "name": "CHI 1000-L19", "weekday": 1, "start": "15:30", "end": "16:50", "location": "Teaching B Bldg 304", "type": "Lecture", "instructor": "W. WONG", "crn": "2825" },
+    { "name": "CHI 1000-L19", "weekday": 3, "start": "15:30", "end": "16:50", "location": "Teaching B Bldg 304", "type": "Lecture", "instructor": "W. WONG", "crn": "2825" },
+    { "name": "DAI 1000-L05", "weekday": 3, "start": "08:30", "end": "09:20", "location": "Teaching C Bldg 106", "type": "Lecture", "instructor": "R. LIAO", "crn": "4257" },
+    { "name": "PED 1109-L01", "weekday": 2, "start": "08:30", "end": "10:20", "location": "Track Field", "type": "Lecture", "instructor": "Y. ZHANG", "crn": "4290" }
   ],
   "special_dates": [
     { "date": "2026-10-23", "type": "exam", "name": "CSC考试" }

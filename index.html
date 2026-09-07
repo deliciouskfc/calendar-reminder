@@ -105,6 +105,28 @@
   }
   @media (max-width: 768px) {
     .main { grid-template-columns: 1fr; }
+    .app-header { padding: 14px 16px; }
+    .app-title { font-size: 20px; }
+    .header-btn { padding: 8px 14px; font-size: 13px; }
+    .calendar-section { padding: 12px; }
+    .schedule-section { padding: 12px; }
+    .calendar-title { font-size: 17px; }
+    .day { min-height: 62px; padding: 3px; border-radius: 6px; }
+    .day-number { font-size: 12px; }
+    .day-week-tag { font-size: 8px; padding: 0 2px; }
+    .day-holiday-label { font-size: 8px; bottom: 1px; left: 2px; }
+    .day-event-pill { font-size: 9px; padding: 1px 2px; }
+    .weekday { font-size: 11px; padding: 4px 0; }
+    .nav-btn { width: 30px; height: 30px; font-size: 14px; }
+    .events-section { padding: 14px; }
+    body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  }
+  @media (max-width: 480px) {
+    .app-title { font-size: 18px; }
+    .app-subtitle { font-size: 11px; }
+    .day { min-height: 54px; padding: 2px; }
+    .day-number { font-size: 11px; }
+    .calendar-title { font-size: 16px; }
   }
   .hidden { display: none !important; }
 
@@ -181,7 +203,7 @@
   .day.has-events::after {
     content: '';
     position: absolute;
-    top: 6px;
+    bottom: 6px;
     right: 6px;
     width: 6px;
     height: 6px;
@@ -217,18 +239,19 @@
   .day.makeup .day-number::before {
     content: '🔄 ';
   }
-  /* 周次标签 */
+  /* 周次标签 - 移到右上角避免与日期重叠 */
   .day-week-tag {
     position: absolute;
     top: 2px;
-    left: 4px;
+    right: 3px;
     font-size: 9px;
     color: #8e44ad;
     font-weight: 600;
-    background: rgba(255,255,255,0.7);
+    background: rgba(142,68,173,0.12);
     padding: 0 3px;
     border-radius: 3px;
     line-height: 1.3;
+    z-index: 2;
   }
   .day-holiday-label {
     position: absolute;
@@ -621,11 +644,80 @@
     top: 2px;
     right: 4px;
     font-size: 9px;
-    opacity: 0.6;
+  }
+
+  /* ===== 开屏动画 ===== */
+  .splash-screen {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(135deg, #4f2e7e 0%, #6a4f9e 50%, #8e44ad 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.6s ease;
+  }
+  .splash-screen.hide {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .splash-content {
+    text-align: center;
+    animation: splashFadeIn 0.8s ease;
+  }
+  .splash-crest {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    padding: 12px;
+    box-shadow: 0 0 40px rgba(255,255,255,0.3);
+    animation: crestPulse 2s ease-in-out infinite;
+  }
+  .splash-title {
+    color: #fff;
+    font-size: 24px;
+    font-weight: 700;
+    margin: 20px 0 6px;
+    letter-spacing: 1px;
+  }
+  .splash-sub {
+    color: rgba(255,255,255,0.75);
+    font-size: 13px;
+    margin-bottom: 28px;
+  }
+  .splash-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(255,255,255,0.25);
+    border-top-color: #fff;
+    border-radius: 50%;
+    margin: 0 auto;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes splashFadeIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes crestPulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(255,255,255,0.3); }
+    50% { transform: scale(1.05); box-shadow: 0 0 60px rgba(255,255,255,0.5); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>
 </head>
 <body>
+<!-- 开屏动画 -->
+<div id="splashScreen" class="splash-screen">
+  <div class="splash-content">
+    <img src="./crest.png" alt="校徽" class="splash-crest">
+    <h1 class="splash-title">我的日历 & 课表</h1>
+    <p class="splash-sub">CUHK-Shenzhen 2026-27</p>
+    <div class="splash-spinner"></div>
+  </div>
+</div>
 <div class="container">
   <header>
     <h1>📅 我的日历 & 课表</h1>
@@ -764,6 +856,9 @@
 /* ================================================================
    基础数据
 ================================================================ */
+const APP_VERSION = '1.1.0';
+const APP_VERSION_CODE = 2;
+const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
 let courses = [];       // 课程（course，按 weekday 重复）
@@ -785,22 +880,22 @@ const DEFAULT_EVENTS = [
 // 默认课程（按星期重复，无具体日期）
 const CSC_URL = 'https://tongxin.me/CSC1001-2026fall/';
 const DEFAULT_COURSES = [
-  { id:'csc-l02', name:'CSC 1001-L02', weekday:1, start:'10:30', end:'11:50', location:'Teaching B 103', type:'Lecture', url:CSC_URL },
-  { id:'csc-l02b', name:'CSC 1001-L02', weekday:3, start:'10:30', end:'11:50', location:'Teaching B 103', type:'Lecture', url:CSC_URL },
-  { id:'csc-t04', name:'CSC 1001-T04', weekday:2, start:'18:00', end:'18:50', location:'Teaching Complex C504', type:'Tutorial', url:CSC_URL },
-  { id:'eco-l02', name:'ECO 2011-L02', weekday:1, start:'13:30', end:'14:50', location:'Teaching Complex C402', type:'Lecture', url:'' },
-  { id:'eco-l02b', name:'ECO 2011-L02', weekday:3, start:'13:30', end:'14:50', location:'Teaching Complex C402', type:'Lecture', url:'' },
-  { id:'eco-t01', name:'ECO 2011-T01', weekday:1, start:'18:00', end:'18:50', location:'Teaching A 107', type:'Tutorial', url:'' },
-  { id:'eng-l07', name:'ENG 1001-L07', weekday:2, start:'13:30', end:'14:50', location:'Teaching D 108', type:'Lecture', url:'' },
-  { id:'eng-l07b', name:'ENG 1001-L07', weekday:4, start:'13:30', end:'14:50', location:'Teaching D 108', type:'Lecture', url:'' },
-  { id:'mat-l01', name:'MAT 1001-L01', weekday:2, start:'10:30', end:'12:20', location:'Teaching Complex C201', type:'Lecture', url:'' },
-  { id:'mat-l01b', name:'MAT 1001-L01', weekday:4, start:'10:30', end:'12:20', location:'Teaching Complex C201', type:'Lecture', url:'' },
-  { id:'mat-t04', name:'MAT 1001-T04', weekday:2, start:'19:30', end:'20:50', location:'Teaching A 301', type:'Tutorial', url:'' },
-  { id:'cec-l08', name:'CEC 1000-L08', weekday:5, start:'14:30', end:'17:20', location:'Teaching Complex C203', type:'Lecture', url:'' },
-  { id:'chi-l19', name:'CHI 1000-L19', weekday:1, start:'15:30', end:'16:50', location:'Teaching B 304', type:'Lecture', url:'' },
-  { id:'chi-l19b', name:'CHI 1000-L19', weekday:3, start:'15:30', end:'16:50', location:'Teaching B 304', type:'Lecture', url:'' },
-  { id:'dai-l05', name:'DAI 1000-L05', weekday:3, start:'08:30', end:'09:20', location:'Teaching C 106', type:'Lecture', url:'' },
-  { id:'ped-l01', name:'PED 1109-L01', weekday:2, start:'08:30', end:'10:20', location:'Track Field', type:'Lecture', url:'' }
+  { id:'csc-l02', name:'CSC 1001-L02', weekday:1, start:'10:30', end:'11:50', location:'Teaching B Bldg 103', type:'Lecture', instructor:'T. LI', crn:'3318', url:CSC_URL },
+  { id:'csc-l02b', name:'CSC 1001-L02', weekday:3, start:'10:30', end:'11:50', location:'Teaching B Bldg 103', type:'Lecture', instructor:'T. LI', crn:'3318', url:CSC_URL },
+  { id:'csc-t04', name:'CSC 1001-T04', weekday:2, start:'18:00', end:'18:50', location:'Teaching Complex C504', type:'Tutorial', instructor:'一. 张', crn:'3325', url:CSC_URL },
+  { id:'eco-l02', name:'ECO 2011-L02', weekday:1, start:'13:30', end:'14:50', location:'Teaching Complex C402', type:'Lecture', instructor:'B. CHUNG', crn:'2751', url:'' },
+  { id:'eco-l02b', name:'ECO 2011-L02', weekday:3, start:'13:30', end:'14:50', location:'Teaching Complex C402', type:'Lecture', instructor:'B. CHUNG', crn:'2751', url:'' },
+  { id:'eco-t01', name:'ECO 2011-T01', weekday:1, start:'18:00', end:'18:50', location:'Teaching A Bldg 107', type:'Tutorial', instructor:'W. LIANG', crn:'2761', url:'' },
+  { id:'eng-l15', name:'ENG 1001-L15', weekday:2, start:'13:30', end:'14:50', location:'Teaching D Bldg 109', type:'Lecture', instructor:'Q. WANG', crn:'2850', url:'' },
+  { id:'eng-l15b', name:'ENG 1001-L15', weekday:4, start:'13:30', end:'14:50', location:'Teaching D Bldg 109', type:'Lecture', instructor:'Q. WANG', crn:'2850', url:'' },
+  { id:'mat-l05', name:'MAT 1001-L05', weekday:2, start:'10:30', end:'12:20', location:'Teaching Complex C301', type:'Lecture', instructor:'K. FANG', crn:'3035', url:'' },
+  { id:'mat-l05b', name:'MAT 1001-L05', weekday:4, start:'10:30', end:'12:20', location:'Teaching Complex C301', type:'Lecture', instructor:'K. FANG', crn:'3035', url:'' },
+  { id:'mat-t20', name:'MAT 1001-T20', weekday:5, start:'19:30', end:'20:50', location:'Teaching A Bldg 301', type:'Tutorial', instructor:'员工', crn:'3060', url:'' },
+  { id:'cec-l08', name:'CEC 1000-L08', weekday:5, start:'14:30', end:'17:20', location:'Teaching Complex C203', type:'Lecture', instructor:'J. YANG', crn:'3783', url:'' },
+  { id:'chi-l19', name:'CHI 1000-L19', weekday:1, start:'15:30', end:'16:50', location:'Teaching B Bldg 304', type:'Lecture', instructor:'W. WONG', crn:'2825', url:'' },
+  { id:'chi-l19b', name:'CHI 1000-L19', weekday:3, start:'15:30', end:'16:50', location:'Teaching B Bldg 304', type:'Lecture', instructor:'W. WONG', crn:'2825', url:'' },
+  { id:'dai-l05', name:'DAI 1000-L05', weekday:3, start:'08:30', end:'09:20', location:'Teaching C Bldg 106', type:'Lecture', instructor:'R. LIAO', crn:'4257', url:'' },
+  { id:'ped-l01', name:'PED 1109-L01', weekday:2, start:'08:30', end:'10:20', location:'Track Field', type:'Lecture', instructor:'Y. ZHANG', crn:'4290', url:'' }
 ];
 
 /* ================================================================
@@ -1720,10 +1815,95 @@ updateReminderStatus();
 setInterval(checkReminders, 15000);
 checkReminders();
 
+/* ================================================================
+   开屏动画隐藏
+================================================================ */
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const splash = document.getElementById('splashScreen');
+    if (splash) {
+      splash.classList.add('hide');
+      setTimeout(() => splash.remove(), 700);
+    }
+  }, 1200);
+});
+
+/* ================================================================
+   应用内版本检查与更新
+================================================================ */
+function compareVersion(v1, v2) {
+  const a = v1.split('.').map(Number);
+  const b = v2.split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] || 0, y = b[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+function showUpdateDialog(remote) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background:#fff;border-radius:16px;padding:24px;max-width:360px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,0.2);';
+  const logHtml = (remote.updateLog || '').split('\n').map(l => `<li>${escapeHtml(l)}</li>`).join('');
+  dialog.innerHTML = `
+    <h3 style="margin:0 0 12px;color:#4f2e7e;font-size:18px;">🎉 发现新版本 v${remote.version}</h3>
+    <p style="color:#7f8c8d;font-size:13px;margin:0 0 14px;">当前版本 v${APP_VERSION}</p>
+    <div style="background:#f5f7fa;border-radius:10px;padding:12px;margin-bottom:18px;max-height:160px;overflow-y:auto;">
+      <div style="font-size:12px;color:#95a5a6;margin-bottom:6px;">更新内容：</div>
+      <ul style="margin:0;padding-left:20px;font-size:13px;color:#2c3e50;line-height:1.8;">${logHtml || '<li>性能优化与 bug 修复</li>'}</ul>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button id="updLater" style="flex:1;padding:11px;border:1px solid #e0e0e0;background:#fff;border-radius:10px;font-size:14px;color:#7f8c8d;cursor:pointer;">稍后</button>
+      <button id="updNow" style="flex:1.2;padding:11px;border:none;background:linear-gradient(135deg,#5a6fd6,#6a4f9e);color:#fff;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;">立即更新</button>
+    </div>
+  `;
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  dialog.querySelector('#updLater').onclick = () => overlay.remove();
+  dialog.querySelector('#updNow').onclick = () => {
+    // PWA 模式下重新加载即可（SW 缓存更新）；APK 模式下跳转下载
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+                         (navigator.standalone === true);
+    if (isStandalone) {
+      window.location.href = remote.downloadUrl;
+    } else {
+      window.location.reload();
+    }
+  };
+}
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch(VERSION_CHECK_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+    const remote = await res.json();
+    if (remote.versionCode > APP_VERSION_CODE ||
+        (remote.version && compareVersion(remote.version, APP_VERSION) > 0)) {
+      showUpdateDialog(remote);
+    }
+  } catch (e) { /* 离线或网络错误时静默 */ }
+}
+
+// 启动 2 秒后检查更新
+setTimeout(checkForUpdate, 2000);
+
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      // 检测到新版本时提示刷新
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateDialog({ version: APP_VERSION, updateLog: '页面已更新，点击刷新生效', downloadUrl: window.location.href });
+          }
+        });
+      });
+    }).catch(() => {});
   });
 }
 </script>
