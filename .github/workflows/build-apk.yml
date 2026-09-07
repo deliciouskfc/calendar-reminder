@@ -70,15 +70,21 @@ jobs:
           }
           EXPECT_EOF
 
-      - name: List build outputs
+      - name: List build outputs and find APK
         run: |
+          echo "=== android/ contents ==="
           ls -la android/
-          find android/ -name "*.apk" -o -name "*.aab" 2>/dev/null || true
+          echo "=== Looking for APKs ==="
+          find android/ -type f \( -name "*.apk" -o -name "*.aab" \) 2>/dev/null | tee /tmp/apk_paths.txt
+          echo "=== Looking for keystore ==="
+          find . -name "*.keystore" 2>/dev/null
+          echo "=== android/app contents ==="
+          ls -la android/app/ 2>/dev/null || true
+          echo "=== Recursive ==="
+          ls -R android/ 2>/dev/null | head -80 || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: calendar-apk
-          path: |
-            android/app-release-signed.apk
-            android/*.apk
+          path: android/**/*.apk
