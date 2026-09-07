@@ -16,75 +16,28 @@ jobs:
       - name: Install expect
         run: apt-get update && apt-get install -y expect
 
-      - name: Pre-configure Bubblewrap + auto-accept SDK licenses
-        run: |
-          mkdir -p "$HOME/.bubblewrap"
-          printf '{\n  "jdkPath": "%s",\n  "androidSdkPath": "%s"\n}\n' \
-            "$JAVA_HOME" "$ANDROID_HOME" > "$HOME/.bubblewrap/config.json"
-          # Accept Android SDK licenses silently
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
-          echo "Config:" && cat "$HOME/.bubblewrap/config.json"
-
       - name: Generate signing keystore
-        run: |
-          keytool -genkeypair -v \
-            -keystore android.keystore \
-            -storepass android \
-            -alias android \
-            -keypass android \
-            -dname "CN=Calendar, OU=Calendar, O=Calendar, L=HK, S=HK, C=HK" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000
+        run: keytool -genkeypair -v -keystore android.keystore -storepass android -alias android -keypass android -dname "CN=Calendar, OU=Calendar, O=Calendar, L=HK, S=HK, C=HK" -keyalg RSA -keysize 2048 -validity 10000
 
-      - name: Initialize TWA with expect (handle all prompts)
-        run: |
-          mkdir -p android
-          expect << 'EXPECT_EOF'
-          set timeout 120
-          spawn bubblewrap init --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" --directory="android"
-          expect {
-            -re {(?i)create} { send "y\r"; exp_continue }
-            -re {(?i)directory.*exist} { send "y\r"; exp_continue }
-            -re {(?i)name.*\?} { send "\r"; exp_continue }
-            -re {(?i)package} { send "com.calendar.app\r"; exp_continue }
-            -re {(?i)hostname} { send "deliciouskfc.github.io\r"; exp_continue }
-            -re {(?i)signing|keystore|alias|password|pass} { send "\r"; exp_continue }
-            -re {(?i)agreement|license} { send "y\r"; exp_continue }
-            -re {(?i)download|install} { send "y\r"; exp_continue }
-            eof
-          }
-          EXPECT_EOF
+      - name: Initialize TWA
+        run: mkdir -p android && expect -c 'set timeout 120; spawn bubblewrap init --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" --directory="android"; expect { -re {(?i)create|directory.*exist} { send "y\r"; exp_continue } -re {(?i)name.*\?|package|hostname} { send "\r"; exp_continue } -re {(?i)signing|keystore|password} { send "\r"; exp_continue } -re {(?i)agreement|license|download|install} { send "y\r"; exp_continue } eof }'
 
-      - name: Build APK with expect
-        run: |
-          cd android
-          expect << 'EXPECT_EOF'
-          set timeout 300
-          spawn bubblewrap build
-          expect {
-            -re {(?i)agreement|license} { send "y\r"; exp_continue }
-            -re {(?i)download|install} { send "y\r"; exp_continue }
-            -re {(?i)signing|keystore|password|pass} { send "\r"; exp_continue }
-            eof
-          }
-          EXPECT_EOF
+      - name: Build APK
+        run: cd android && expect -c 'set timeout 300; spawn bubblewrap build; expect { -re {(?i)agreement|license} { send "y\r"; exp_continue } -re {(?i)download|install} { send "y\r"; exp_continue } -re {(?i)signing|keystore|password} { send "\r"; exp_continue } eof }'
 
-      - name: List build outputs and find APK
+      - name: Debug - find APK location
         run: |
-          echo "=== android/ contents ==="
+          echo "=== pwd ==="
+          pwd
+          echo "=== find all apk/aab ==="
+          find . -type f \( -name "*.apk" -o -name "*.aab" \)
+          echo "=== ls android ==="
           ls -la android/
-          echo "=== Looking for APKs ==="
-          find android/ -type f \( -name "*.apk" -o -name "*.aab" \) 2>/dev/null | tee /tmp/apk_paths.txt
-          echo "=== Looking for keystore ==="
-          find . -name "*.keystore" 2>/dev/null
-          echo "=== android/app contents ==="
-          ls -la android/app/ 2>/dev/null || true
-          echo "=== Recursive ==="
-          ls -R android/ 2>/dev/null | head -80 || true
+          echo "=== ls android/app if exists ==="
+          ls -la android/app/ 2>/dev/null || echo "no app dir"
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: calendar-apk
-          path: android/**/*.apk
+          path: ./*.apk
