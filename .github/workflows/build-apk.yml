@@ -13,7 +13,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate signing key
+      - name: Install expect
+        run: apt-get update && apt-get install -y expect
+
+      - name: Pre-configure Bubblewrap + auto-accept SDK licenses
+        run: |
+          mkdir -p "$HOME/.bubblewrap"
+          printf '{\n  "jdkPath": "%s",\n  "androidSdkPath": "%s"\n}\n' \
+            "$JAVA_HOME" "$ANDROID_HOME" > "$HOME/.bubblewrap/config.json"
+          # Accept Android SDK licenses silently
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
+          echo "Config:" && cat "$HOME/.bubblewrap/config.json"
+
+      - name: Generate signing keystore
         run: |
           keytool -genkeypair -v \
             -keystore android.keystore \
@@ -25,20 +37,48 @@ jobs:
             -keysize 2048 \
             -validity 10000
 
-      - name: Initialize TWA
+      - name: Initialize TWA with expect (handle all prompts)
         run: |
           mkdir -p android
-          printf "y\ny\ny\ny\ny\ny\ny\ny\ny\ny\ny\n" | bubblewrap init \
-            --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" \
-            --directory="android" || echo "init done (or skipped)"
+          expect << 'EXPECT_EOF'
+          set timeout 120
+          spawn bubblewrap init --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" --directory="android"
+          expect {
+            -re {(?i)create} { send "y\r"; exp_continue }
+            -re {(?i)directory.*exist} { send "y\r"; exp_continue }
+            -re {(?i)name.*\?} { send "\r"; exp_continue }
+            -re {(?i)package} { send "com.calendar.app\r"; exp_continue }
+            -re {(?i)hostname} { send "deliciouskfc.github.io\r"; exp_continue }
+            -re {(?i)signing|keystore|alias|password|pass} { send "\r"; exp_continue }
+            -re {(?i)agreement|license} { send "y\r"; exp_continue }
+            -re {(?i)download|install} { send "y\r"; exp_continue }
+            eof
+          }
+          EXPECT_EOF
 
-      - name: Build APK
+      - name: Build APK with expect
         run: |
           cd android
-          printf "y\ny\ny\ny\n" | bubblewrap build
+          expect << 'EXPECT_EOF'
+          set timeout 300
+          spawn bubblewrap build
+          expect {
+            -re {(?i)agreement|license} { send "y\r"; exp_continue }
+            -re {(?i)download|install} { send "y\r"; exp_continue }
+            -re {(?i)signing|keystore|password|pass} { send "\r"; exp_continue }
+            eof
+          }
+          EXPECT_EOF
+
+      - name: List build outputs
+        run: |
+          ls -la android/
+          find android/ -name "*.apk" -o -name "*.aab" 2>/dev/null || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: calendar-apk
-          path: android/app-release-signed.apk
+          path: |
+            android/app-release-signed.apk
+            android/*.apk
