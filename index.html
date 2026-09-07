@@ -105,28 +105,40 @@
   }
   @media (max-width: 768px) {
     .main { grid-template-columns: 1fr; }
-    .app-header { padding: 14px 16px; }
-    .app-title { font-size: 20px; }
-    .header-btn { padding: 8px 14px; font-size: 13px; }
-    .calendar-section { padding: 12px; }
-    .schedule-section { padding: 12px; }
-    .calendar-title { font-size: 17px; }
-    .day { min-height: 62px; padding: 3px; border-radius: 6px; }
-    .day-number { font-size: 12px; }
-    .day-week-tag { font-size: 8px; padding: 0 2px; }
-    .day-holiday-label { font-size: 8px; bottom: 1px; left: 2px; }
-    .day-event-pill { font-size: 9px; padding: 1px 2px; }
+    .app-header { padding: 10px 12px; }
+    .app-title { font-size: 18px; }
+    .header-btn { padding: 6px 12px; font-size: 13px; }
+    .calendar-section { padding: 10px; }
+    .schedule-section { padding: 10px; }
+    .calendar-title { font-size: 16px; }
+    .day { min-height: 48px; padding: 2px; border-radius: 5px; }
+    .day-number { font-size: 12px; font-weight: 600; }
+    .day-week-tag { font-size: 7px; padding: 0 2px; top: 1px; right: 1px; line-height: 1.4; }
+    .day-holiday-label { display: none; }
+    .day-event-pill { display: none; }
     .weekday { font-size: 11px; padding: 4px 0; }
-    .nav-btn { width: 30px; height: 30px; font-size: 14px; }
-    .events-section { padding: 14px; }
+    .nav-btn { width: 28px; height: 28px; font-size: 14px; }
+    .events-section { padding: 10px; }
     body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+    .container { padding: 0; }
+    .view-tabs { padding: 6px 10px; }
+    .view-tab { font-size: 13px; padding: 6px 14px; }
+    .calendar-header { margin-bottom: 10px; }
+    .weekdays { gap: 2px; }
+    .days { gap: 2px; }
+    .day.events::after { display: none; }
   }
   @media (max-width: 480px) {
-    .app-title { font-size: 18px; }
+    .app-title { font-size: 16px; }
     .app-subtitle { font-size: 11px; }
-    .day { min-height: 54px; padding: 2px; }
+    .day { min-height: 42px; padding: 1px; border-radius: 4px; }
     .day-number { font-size: 11px; }
-    .calendar-title { font-size: 16px; }
+    .day-week-tag { font-size: 6px; }
+    .calendar-title { font-size: 15px; }
+    .header-actions { gap: 4px; }
+    .header-btn { padding: 5px 10px; font-size: 12px; }
+    .nav-btn { width: 26px; height: 26px; font-size: 13px; }
+    .weekday { font-size: 10px; padding: 3px 0; }
   }
   .hidden { display: none !important; }
 
@@ -664,47 +676,43 @@
   .splash-content {
     text-align: center;
     animation: splashFadeIn 0.8s ease;
+    padding: 20px;
   }
   .splash-crest {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.15);
-    padding: 12px;
-    box-shadow: 0 0 40px rgba(255,255,255,0.3);
-    animation: crestPulse 2s ease-in-out infinite;
+    width: 180px;
+    height: 180px;
+    border-radius: 28px;
+    object-fit: cover;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 4px rgba(255,255,255,0.2);
+    animation: crestPop 0.7s cubic-bezier(0.2,1.2,0.4,1);
   }
   .splash-title {
     color: #fff;
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
-    margin: 20px 0 6px;
+    margin: 24px 0 6px;
     letter-spacing: 1px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.25);
   }
   .splash-sub {
-    color: rgba(255,255,255,0.75);
+    color: rgba(255,255,255,0.85);
     font-size: 13px;
-    margin-bottom: 28px;
-  }
-  .splash-spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid rgba(255,255,255,0.25);
-    border-top-color: #fff;
-    border-radius: 50%;
-    margin: 0 auto;
-    animation: spin 0.8s linear infinite;
+    margin-bottom: 0;
+    letter-spacing: 0.5px;
   }
   @keyframes splashFadeIn {
-    from { opacity: 0; transform: scale(0.9); }
+    from { opacity: 0; transform: scale(0.92); }
     to { opacity: 1; transform: scale(1); }
   }
-  @keyframes crestPulse {
-    0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(255,255,255,0.3); }
-    50% { transform: scale(1.05); box-shadow: 0 0 60px rgba(255,255,255,0.5); }
+  @keyframes crestPop {
+    0% { opacity: 0; transform: scale(0.6) rotate(-6deg); }
+    60% { transform: scale(1.08) rotate(2deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0); }
   }
-  @keyframes spin {
-    to { transform: rotate(360deg); }
+  @media (max-width: 480px) {
+    .splash-crest { width: 140px; height: 140px; border-radius: 22px; }
+    .splash-title { font-size: 20px; margin-top: 18px; }
+    .splash-sub { font-size: 12px; }
   }
 </style>
 </head>
@@ -715,7 +723,6 @@
     <img src="./crest.png" alt="校徽" class="splash-crest">
     <h1 class="splash-title">我的日历 & 课表</h1>
     <p class="splash-sub">CUHK-Shenzhen 2026-27</p>
-    <div class="splash-spinner"></div>
   </div>
 </div>
 <div class="container">
