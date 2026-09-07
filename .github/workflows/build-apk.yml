@@ -38,40 +38,29 @@ jobs:
           spawn npx @bubblewrap/cli init --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" --directory="android"
           expect {
             -re {(?i)create|directory.*exist} { send "y\r"; exp_continue }
-            -re {(?i)name|package|hostname} { send "\r"; exp_continue }
-            -re {(?i)signing|keystore|password} { send "\r"; exp_continue }
-            -re {(?i)agreement|license|download|install} { send "y\r"; exp_continue }
+            -re {\(y/N\)|\(Y/n\)} { send "y\r"; exp_continue }
+            -re {(?i)name|package|hostname|display} { send "\r"; exp_continue }
+            -re {(?i)signing|keystore|password|path} { send "\r"; exp_continue }
             eof
           }'
 
       - name: Build APK
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
           cd android
-          # Write JDK path to a file for expect to read
           echo "$JAVA_HOME" > /tmp/jdk_path.txt
           expect -c 'set timeout 900
           spawn npx @bubblewrap/cli build
           expect {
-            -re {(?i)JDK.*install.*recommended} { send "n\r"; exp_continue }
-            -re {(?i)path.*to.*your.*existing.*jdk} {
+            -re {(?i)install the JDK.*recommended} { send "n\r"; exp_continue }
+            -re {(?i)path to your existing JDK} {
               set f [open "/tmp/jdk_path.txt" r]
-              set jdkpath [read $f]
+              set jdkpath [string trim [read $f]]
               close $f
               send "$jdkpath\r"
               exp_continue
             }
-            -re {(?i)path.*jdk} {
-              set f [open "/tmp/jdk_path.txt" r]
-              set jdkpath [read $f]
-              close $f
-              send "$jdkpath\r"
-              exp_continue
-            }
-            -re {(?i)agreement|license} { send "y\r"; exp_continue }
-            -re {(?i)download|install} { send "y\r"; exp_continue }
-            -re {(?i)signing|keystore|password} { send "\r"; exp_continue }
+            -re {\(y/N\)|\(Y/n\)} { send "y\r"; exp_continue }
+            -re {(?i)password|keystore} { send "\r"; exp_continue }
             eof
           }'
 
@@ -79,10 +68,6 @@ jobs:
         run: |
           echo "=== Searching for APK files ==="
           find . -type f \( -name "*.apk" -o -name "*.aab" \) 2>/dev/null
-          echo "=== android dir ==="
-          ls -la android/ 2>/dev/null || echo "no android dir"
-          echo "=== release dir ==="
-          ls -la android/app/build/outputs/apk/release/ 2>/dev/null || echo "no apk release dir"
           echo "=== full android tree ==="
           find android/ -type f 2>/dev/null | head -50
 
