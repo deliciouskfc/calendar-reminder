@@ -97,17 +97,17 @@ def find_upcoming():
     return upcoming, now
 
 def push(title, desp):
-    key = os.environ.get("SERVERCHAN_KEY", "")
-    if not key:
-        print("ERROR: SERVERCHAN_KEY not set")
+    spt = os.environ.get("WXPUSHER_SPT", "SPT_nPfgjZOvYpb3odddfY1jz4MHBia5")
+    if not spt:
+        print("ERROR: WXPUSHER_SPT not set")
         return False
-    url = f"https://sctapi.ftqq.com/{key}.send"
-    data = urllib.parse.urlencode({"title": title, "desp": desp}).encode()
-    req = urllib.request.Request(url, data=data)
+    content = f"{title}\n\n{desp}"
+    encoded = urllib.parse.quote(content)
+    url = f"https://wxpusher.zjiecode.com/api/send/message/{spt}/{encoded}"
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(url, timeout=10) as resp:
             result = json.loads(resp.read().decode())
-            if result.get("code") == 0:
+            if result.get("code") == 1000:
                 print(f"PUSH OK: {title}")
                 return True
             else:
