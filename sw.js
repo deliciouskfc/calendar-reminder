@@ -1,6 +1,6 @@
 // Service Worker - 离线缓存
-const CACHE = 'calendar-v2';
-const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './crest.png'];
+const CACHE = 'calendar-v3';
+const ASSETS = ['./', './index.html', './mobile.html', './manifest.json', './icon-192.png', './icon-512.png', './crest.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));

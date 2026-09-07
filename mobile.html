@@ -13,20 +13,21 @@
 <link rel="apple-touch-icon" href="./icon-192.png">
 <title>我的日历 & 课表</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html, body {
     font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-    background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+    background: #e4e8f0;
     color: #2c3e50;
     min-height: 100vh;
-    padding: 20px;
+    padding: 0;
+    -webkit-text-size-adjust: 100%;
   }
   .container {
-    max-width: 1200px;
-    margin: 0 auto;
+    max-width: 100%;
+    margin: 0;
     background: #fff;
-    border-radius: 14px;
-    box-shadow: 0 8px 32px rgba(50, 60, 120, 0.1);
+    border-radius: 0;
+    box-shadow: none;
     overflow: hidden;
   }
 
@@ -102,43 +103,6 @@
     grid-template-columns: 1fr 300px;
     gap: 0;
     min-height: 540px;
-  }
-  @media (max-width: 768px) {
-    .main { grid-template-columns: 1fr; }
-    .app-header { padding: 10px 12px; }
-    .app-title { font-size: 18px; }
-    .header-btn { padding: 6px 12px; font-size: 13px; }
-    .calendar-section { padding: 10px; }
-    .schedule-section { padding: 10px; }
-    .calendar-title { font-size: 16px; }
-    .day { min-height: 48px; padding: 2px; border-radius: 5px; }
-    .day-number { font-size: 12px; font-weight: 600; }
-    .day-week-tag { font-size: 7px; padding: 0 2px; top: 1px; right: 1px; line-height: 1.4; }
-    .day-holiday-label { display: none; }
-    .day-event-pill { display: none; }
-    .weekday { font-size: 11px; padding: 4px 0; }
-    .nav-btn { width: 28px; height: 28px; font-size: 14px; }
-    .events-section { padding: 10px; }
-    body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
-    .container { padding: 0; }
-    .view-tabs { padding: 6px 10px; }
-    .view-tab { font-size: 13px; padding: 6px 14px; }
-    .calendar-header { margin-bottom: 10px; }
-    .weekdays { gap: 2px; }
-    .days { gap: 2px; }
-    .day.events::after { display: none; }
-  }
-  @media (max-width: 480px) {
-    .app-title { font-size: 16px; }
-    .app-subtitle { font-size: 11px; }
-    .day { min-height: 42px; padding: 1px; border-radius: 4px; }
-    .day-number { font-size: 11px; }
-    .day-week-tag { font-size: 6px; }
-    .calendar-title { font-size: 15px; }
-    .header-actions { gap: 4px; }
-    .header-btn { padding: 5px 10px; font-size: 12px; }
-    .nav-btn { width: 26px; height: 26px; font-size: 13px; }
-    .weekday { font-size: 10px; padding: 3px 0; }
   }
   .hidden { display: none !important; }
 
@@ -714,6 +678,53 @@
     .splash-title { font-size: 20px; margin-top: 18px; }
     .splash-sub { font-size: 12px; }
   }
+
+  /* ================================================================
+     手机端布局（无条件覆盖，放在最后确保优先级）
+     目标屏幕 CSS 像素约 400×870（2608×1200 物理 / 3x）
+  ================================================================ */
+  .main { grid-template-columns: 1fr; min-height: 0; }
+  header { padding: 12px 14px; flex-wrap: nowrap; gap: 8px; }
+  header h1 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .header-actions { gap: 6px; flex-shrink: 0; }
+  .btn { padding: 8px 14px; font-size: 13px; }
+  .view-tabs { padding: 0 10px; }
+  .view-tab { font-size: 13px; padding: 9px 18px; }
+  .calendar-section { padding: 12px 10px 16px; }
+  .schedule-section { padding: 12px 10px 16px; }
+  .calendar-title { font-size: 16px; }
+  .calendar-header { margin-bottom: 12px; }
+  .nav-btn { width: 34px; height: 34px; font-size: 16px; }
+  .weekdays { gap: 3px; margin-bottom: 4px; }
+  .weekday { font-size: 12px; padding: 5px 0; }
+  .days { gap: 3px; }
+  .day { min-height: 56px; padding: 3px 4px; border-radius: 6px; }
+  .day-number { font-size: 13px; font-weight: 600; }
+  .day-week-tag { font-size: 8px; padding: 0 3px; top: 2px; right: 2px; line-height: 1.4; }
+  .day-holiday-label { display: none; }
+  .day-event-pill { display: none; }
+  .day.has-events::after { bottom: 4px; right: 4px; }
+  .events-section { padding: 12px 14px; border-left: none; border-top: 1px solid #eef0f5; }
+  .events-section h2 { font-size: 15px; }
+  .events-list { max-height: 38vh; }
+  .jump-schedule-btn { display: block; margin-bottom: 12px; padding: 9px 10px; font-size: 13px; border-radius: 8px; }
+  .event-card { padding: 12px; }
+  .event-title { font-size: 14px; }
+  .event-actions button { padding: 6px 10px; font-size: 12px; }
+  body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  .schedule-section { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tt-grid { min-width: 760px; }
+  /* 移动端弹窗：全宽底部弹出，便于手指操作 */
+  .modal-overlay { align-items: flex-end; background: rgba(0,0,0,0.5); }
+  .modal { width: 100%; max-width: 100%; max-height: 92vh; margin: 0; border-radius: 16px 16px 0 0; padding: 18px 16px; overflow-y: auto; }
+  .modal h3 { font-size: 18px; margin-bottom: 14px; }
+  .form-row { flex-direction: column; gap: 0; }
+  .form-group input, .form-group select { padding: 12px 12px; font-size: 16px; }
+  .form-group label { font-size: 13px; }
+  .modal-actions { margin-top: 18px; }
+  .modal-actions .btn { padding: 11px 18px; font-size: 15px; flex: 1; }
+  .popup-menu { font-size: 14px; }
+  .popup-menu button { padding: 12px 16px; }
 </style>
 </head>
 <body>
