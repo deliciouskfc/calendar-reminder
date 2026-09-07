@@ -1042,6 +1042,11 @@ function loadData() {
         events.unshift(...DEFAULT_EVENTS);
         saveData();
       }
+      // 临时：注入提醒测试日程（00:32 开始，提前 5 分钟提醒 → 00:27 触发）
+      if (!events.find(e => e.id === 'test-reminder-0908')) {
+        events.push({ id: 'test-reminder-0908', title: '⏰ 提醒测试', date: '2026-09-08', start: '00:32', end: '00:35', type: 'event', location: '测试提醒', remind: 5 });
+        saveData();
+      }
     }
   } catch(e) {
     events = [...DEFAULT_EVENTS];
