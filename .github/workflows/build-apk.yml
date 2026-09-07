@@ -54,7 +54,7 @@ jobs:
               "path": "/tmp/android.keystore",
               "alias": "android"
             },
-            "appVersionName": "1.1.1",
+            "appVersion": "1.1.1",
             "appVersionCode": 5,
             "sdkVersion": "34",
             "enableSiteSettingsShortcut": false,
@@ -90,6 +90,6 @@ jobs:
         with:
           name: calendar-apk
           path: |
+            android/app-release-signed.apk
             android/app/build/outputs/
-            **/*.apk
           if-no-files-found: warn
