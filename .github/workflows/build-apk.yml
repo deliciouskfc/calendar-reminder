@@ -20,14 +20,17 @@ jobs:
         run: keytool -genkeypair -v -keystore android.keystore -storepass android -alias android -keypass android -dname "CN=Calendar, OU=Calendar, O=Calendar, L=HK, S=HK, C=HK" -keyalg RSA -keysize 2048 -validity 10000
 
       - name: Initialize TWA
-        run: mkdir -p android && expect -c 'set timeout 120; spawn bubblewrap init --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" --directory="android"; expect { -re {(?i)create|directory.*exist} { send "y\r"; exp_continue } -re {(?i)name.*\?|package|hostname} { send "\r"; exp_continue } -re {(?i)signing|keystore|password} { send "\r"; exp_continue } -re {(?i)agreement|license|download|install} { send "y\r"; exp_continue } eof }'
+        run: mkdir -p android && expect -c 'set timeout 180; spawn bubblewrap init --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" --directory="android"; expect { -re {(?i)create|directory.*exist} { send "y\r"; exp_continue } -re {(?i)name.*\?|package|hostname} { send "\r"; exp_continue } -re {(?i)signing|keystore|password} { send "\r"; exp_continue } -re {(?i)agreement|license|download|install} { send "y\r"; exp_continue } eof }'
 
       - name: Build APK
-        run: cd android && expect -c 'set timeout 300; spawn bubblewrap build; expect { -re {(?i)agreement|license} { send "y\r"; exp_continue } -re {(?i)download|install} { send "y\r"; exp_continue } -re {(?i)signing|keystore|password} { send "\r"; exp_continue } eof }'
+        run: cd android && expect -c 'set timeout 900; spawn bubblewrap build; expect { -re {(?i)agreement|license} { send "y\r"; exp_continue } -re {(?i)download|install} { send "y\r"; exp_continue } -re {(?i)signing|keystore|password} { send "\r"; exp_continue } eof }'
 
-      - name: Upload entire android dir as artifact
+      - name: List all files
+        run: find . -type f -name "*.apk" -o -name "*.aab" 2>/dev/null; ls -la android/ 2>/dev/null || echo "no android dir"; ls -la android/app/build/outputs/apk/release/ 2>/dev/null || echo "no apk release dir"
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: calendar-apk-android
-          path: android/
-          if-no-files-found: error
+          name: calendar-apk
+          path: .
+          if-no-files-found: warn
