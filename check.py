@@ -97,7 +97,7 @@ def find_upcoming():
     return upcoming, now
 
 def push(title, desp):
-    spt = os.environ.get("WXPUSHER_SPT", "SPT_nPfgjZOvYpb3odddfY1jz4MHBia5")
+    spt = os.environ.get("WXPUSHER_SPT") or "SPT_nPfgjZOvYpb3odddfY1jz4MHBia5"
     if not spt:
         print("ERROR: WXPUSHER_SPT not set")
         return False
