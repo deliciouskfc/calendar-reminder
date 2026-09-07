@@ -1,0 +1,48 @@
+{
+  "_comment": "CUHK 2026-27 课表 - 由日历应用导出，星期: 1=周一..7=周日",
+  "courses": [
+    { "name": "CSC 1001-L02", "weekday": 1, "start": "10:30", "end": "11:50", "location": "Teaching B 103", "type": "Lecture" },
+    { "name": "CSC 1001-L02", "weekday": 3, "start": "10:30", "end": "11:50", "location": "Teaching B 103", "type": "Lecture" },
+    { "name": "CSC 1001-T04", "weekday": 2, "start": "18:00", "end": "18:50", "location": "Teaching Complex C504", "type": "Tutorial" },
+    { "name": "ECO 2011-L02", "weekday": 1, "start": "13:30", "end": "14:50", "location": "Teaching Complex C402", "type": "Lecture" },
+    { "name": "ECO 2011-L02", "weekday": 3, "start": "13:30", "end": "14:50", "location": "Teaching Complex C402", "type": "Lecture" },
+    { "name": "ECO 2011-T01", "weekday": 1, "start": "18:00", "end": "18:50", "location": "Teaching A 107", "type": "Tutorial" },
+    { "name": "ENG 1001-L07", "weekday": 2, "start": "13:30", "end": "14:50", "location": "Teaching D 108", "type": "Lecture" },
+    { "name": "ENG 1001-L07", "weekday": 4, "start": "13:30", "end": "14:50", "location": "Teaching D 108", "type": "Lecture" },
+    { "name": "MAT 1001-L01", "weekday": 2, "start": "10:30", "end": "12:20", "location": "Teaching Complex C201", "type": "Lecture" },
+    { "name": "MAT 1001-L01", "weekday": 4, "start": "10:30", "end": "12:20", "location": "Teaching Complex C201", "type": "Lecture" },
+    { "name": "MAT 1001-T04", "weekday": 2, "start": "19:30", "end": "20:50", "location": "Teaching A 301", "type": "Tutorial" },
+    { "name": "CEC 1000-L08", "weekday": 5, "start": "14:30", "end": "17:20", "location": "Teaching Complex C203", "type": "Lecture" },
+    { "name": "CHI 1000-L19", "weekday": 1, "start": "15:30", "end": "16:50", "location": "Teaching B 304", "type": "Lecture" },
+    { "name": "CHI 1000-L19", "weekday": 3, "start": "15:30", "end": "16:50", "location": "Teaching B 304", "type": "Lecture" },
+    { "name": "DAI 1000-L05", "weekday": 3, "start": "08:30", "end": "09:20", "location": "Teaching C 106", "type": "Lecture" }
+  ],
+  "special_dates": [
+    { "date": "2026-10-23", "type": "exam", "name": "CSC考试" }
+  ],
+  "school_calendar": {
+    "semesters": [
+      { "name": "第一学期", "start": "2026-09-07", "end": "2026-12-18" },
+      { "name": "独立探索期", "start": "2026-12-28", "end": "2027-01-10" },
+      { "name": "第二学期", "start": "2027-01-11", "end": "2027-05-14" },
+      { "name": "暑期课程", "start": "2027-05-31", "end": "2027-07-16" }
+    ],
+    "holidays": [
+      { "start": "2026-09-25", "end": "2026-09-27", "name": "中秋节" },
+      { "start": "2026-10-01", "end": "2026-10-07", "name": "国庆节" },
+      { "start": "2027-01-25", "end": "2027-02-14", "name": "农历新年" },
+      { "start": "2027-04-05", "end": "2027-04-05", "name": "清明节" },
+      { "start": "2027-05-01", "end": "2027-05-01", "name": "劳动节" },
+      { "start": "2027-06-09", "end": "2027-06-09", "name": "端午节" }
+    ],
+    "exam_periods": [
+      { "start": "2026-12-20", "end": "2026-12-27" },
+      { "start": "2027-05-15", "end": "2027-05-22" },
+      { "start": "2027-07-19", "end": "2027-07-21" }
+    ]
+  },
+  "notify": {
+    "before_minutes": 30,
+    "timezone": "Asia/Shanghai"
+  }
+}
