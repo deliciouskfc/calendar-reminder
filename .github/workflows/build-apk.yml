@@ -24,8 +24,6 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-34 build-tools;34.0.0'
 
       - name: Install expect
         run: sudo apt-get update && sudo apt-get install -y expect
@@ -34,52 +32,45 @@ jobs:
         run: keytool -genkeypair -v -keystore android.keystore -storepass android -alias android -keypass android -dname "CN=Calendar, OU=Calendar, O=Calendar, L=HK, S=HK, C=HK" -keyalg RSA -keysize 2048 -validity 10000
 
       - name: Initialize TWA project
-        run: mkdir -p android && expect -c '
-          set timeout 180
+        run: |
+          mkdir -p android
+          expect -c 'set timeout 180
           spawn npx @bubblewrap/cli init --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" --directory="android"
           expect {
             -re {(?i)create|directory.*exist} { send "y\r"; exp_continue }
-            -re {(?i)name.*\?|package|hostname} { send "\r"; exp_continue }
+            -re {(?i)name|package|hostname} { send "\r"; exp_continue }
             -re {(?i)signing|keystore|password} { send "\r"; exp_continue }
             -re {(?i)agreement|license|download|install} { send "y\r"; exp_continue }
             eof
-          }
-        '
+          }'
 
       - name: Build APK
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME }}
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-        run: cd android && expect -c '
-          set timeout 900
+        run: |
+          cd android
+          expect -c 'set timeout 900
           spawn npx @bubblewrap/cli build
           expect {
-            -re {(?i)JDK.*install.*recommended} { send "n\r"; exp_continue }
+            -re {(?i)JDK.*install} { send "n\r"; exp_continue }
             -re {(?i)agreement|license} { send "y\r"; exp_continue }
             -re {(?i)download|install} { send "y\r"; exp_continue }
             -re {(?i)signing|keystore|password} { send "\r"; exp_continue }
             eof
-          }
-        '
+          }'
 
-      - name: Find and list APK files
+      - name: Find APK files
         run: |
           echo "=== Searching for APK files ==="
-          find . -type f -name "*.apk" 2>/dev/null
-          find . -type f -name "*.aab" 2>/dev/null
+          find . -type f \( -name "*.apk" -o -name "*.aab" \) 2>/dev/null
           echo "=== android dir ==="
           ls -la android/ 2>/dev/null || echo "no android dir"
           echo "=== release dir ==="
           ls -la android/app/build/outputs/apk/release/ 2>/dev/null || echo "no apk release dir"
-          echo "=== signing config ==="
-          ls -la android/app/build/outputs/apk/ 2>/dev/null || echo "no apk dir"
 
-      - name: Upload entire android build output
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: calendar-apk
           path: |
             android/app/build/outputs/
-            android/*.apk
-            *.apk
+            **/*.apk
           if-no-files-found: warn
