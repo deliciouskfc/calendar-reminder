@@ -29,28 +29,48 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y expect
 
       - name: Generate signing keystore
-        run: keytool -genkeypair -v -keystore android.keystore -storepass android -alias android -keypass android -dname "CN=Calendar, OU=Calendar, O=Calendar, L=HK, S=HK, C=HK" -keyalg RSA -keysize 2048 -validity 10000
+        run: keytool -genkeypair -v -keystore /tmp/android.keystore -storepass android -alias android -keypass android -dname "CN=Calendar, OU=Calendar, O=Calendar, L=HK, S=HK, C=HK" -keyalg RSA -keysize 2048 -validity 10000
+
+      - name: Create TWA project manually
+        run: |
+          mkdir -p android
+          cat > android/twa-manifest.json << 'MANIFEST'
+          {
+            "packageId": "com.calendar.app",
+            "host": "deliciouskfc.github.io",
+            "name": "日历课表",
+            "launcherName": "日历课表",
+            "display": "standalone",
+            "orientation": "portrait",
+            "themeColor": "#4f8ef7",
+            "navigationColor": "#4f8ef7",
+            "navigationColorDark": "#4f8ef7",
+            "navigationDividerColor": "#4f8ef7",
+            "navigationDividerColorDark": "#4f8ef7",
+            "backgroundColor": "#f5f7fa",
+            "enableNotifications": true,
+            "startUrl": "/calendar-reminder/index.html",
+            "iconUrl": "https://deliciouskfc.github.io/calendar-reminder/icon-512.png",
+            "maskableIconUrl": "https://deliciouskfc.github.io/calendar-reminder/icon-512.png",
+            "splashScreenFadeOutDuration": 300,
+            "signingKey": {
+              "path": "/tmp/android.keystore",
+              "alias": "android"
+            },
+            "appVersionName": "1.0.0",
+            "appVersionCode": 1,
+            "sdkVersion": "34",
+            "enableSiteSettingsShortcut": false,
+            "features": []
+          }
+          MANIFEST
+          cat android/twa-manifest.json
 
       - name: Write Bubblewrap config
         run: |
           mkdir -p ~/.bubblewrap
-          cat > ~/.bubblewrap/config.json << EOF
-          {"jdkPath":"$JAVA_HOME","androidSdkPath":"$ANDROID_HOME"}
-          EOF
+          printf '{"jdkPath":"%s","androidSdkPath":"%s"}' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
           cat ~/.bubblewrap/config.json
-
-      - name: Initialize TWA project
-        run: |
-          mkdir -p android
-          expect -c 'set timeout 180
-          spawn npx @bubblewrap/cli init --manifest="https://deliciouskfc.github.io/calendar-reminder/manifest.json" --directory="android"
-          expect {
-            -re {(?i)create|directory.*exist} { send "y\r"; exp_continue }
-            -re {\(y/N\)|\(Y/n\)} { send "y\r"; exp_continue }
-            -re {(?i)name|package|hostname|display} { send "\r"; exp_continue }
-            -re {(?i)signing|keystore|password|path} { send "\r"; exp_continue }
-            eof
-          }'
 
       - name: Build APK
         run: |
@@ -61,7 +81,8 @@ jobs:
             -exact "Do you want Bubblewrap to install the JDK" { send "n\r"; exp_continue }
             -exact "Path to your existing JDK" { send "$env(JAVA_HOME)\r"; exp_continue }
             -re {\(y/N\)|\(Y/n\)} { send "y\r"; exp_continue }
-            -exact "password" { send "\r"; exp_continue }
+            -exact "password" { send "android\r"; exp_continue }
+            -exact "Password" { send "android\r"; exp_continue }
             eof
           }'
 
