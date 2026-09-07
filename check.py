@@ -1,171 +1,140 @@
 #!/usr/bin/env python3
-"""
-CUHK 课表课前提醒脚本
-- 读取 schedule.json
-- 检查 30 分钟内是否有课
-- 通过 Server酱 (sct.ftqq.com) 推送到微信
-- 使用 GitHub Actions 定时运行，推送记录存在 GitHub Actions cache 里防止重复
-"""
-
+"""课表提醒脚本 - 提前 30 分钟推送通知到微信"""
 import json
 import os
 import sys
-import time
-import hashlib
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo  # Python 3.9+
+from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("Asia/Shanghai")
-REMIND_BEFORE = 30  # 提前多少分钟提醒
 
-def load_schedule(path="schedule.json"):
-    with open(path, "r", encoding="utf-8") as f:
+def load_schedule():
+    with open("schedule.json", encoding="utf-8") as f:
         return json.load(f)
 
-def dk(d):
-    return d.strftime("%Y-%m-%d")
+def is_holiday(date_str, cal):
+    for h in cal.get("holidays", []):
+        if h["start"] <= date_str <= h["end"]:
+            return h["name"]
+    return None
 
-def get_date_info(d, cfg):
-    key = dk(d)
-    info = {"holiday": None, "exam": False, "independent": False, "makeup": None, "semester": None}
+def is_exam_period(date_str, cal):
+    for p in cal.get("exam_periods", []):
+        if p["start"] <= date_str <= p["end"]:
+            return True
+    return False
 
-    for s in cfg.get("school_calendar", {}).get("semesters", []):
-        if s["start"] <= key <= s["end"]:
-            info["semester"] = s["name"]
-            if s.get("type") == "independent":
-                info["independent"] = True
-            break
+def get_school_day(date_str, cal):
+    """检查是否应该上课，返回补课的 weekday 或 None"""
+    # 先检查是不是补课日
+    makeups = [
+        {"date": "2026-09-20", "weekday": 5},  # 补周五
+    ]
+    for m in makeups:
+        if m["date"] == date_str:
+            return m["weekday"], "补课日"
 
-    for h in cfg.get("school_calendar", {}).get("holidays", []):
-        if h["start"] <= key <= h["end"]:
-            info["holiday"] = h["name"]
-            break
+    if is_holiday(date_str, cal):
+        return None, "假期"
+    if is_exam_period(date_str, cal):
+        return None, "考试期"
 
-    for ep in cfg.get("school_calendar", {}).get("exam_periods", []):
-        if ep["start"] <= key <= ep["end"]:
-            info["exam"] = True
-            break
+    # 检查是否在学期内
+    for sem in cal.get("semesters", []):
+        if sem["start"] <= date_str <= sem["end"]:
+            return None, "学期内"
+    return None, "非学期"
 
-    return info
+def find_upcoming():
+    sched = load_schedule()
+    now = datetime.now(TZ)
+    target = now + timedelta(minutes=30)
+    notify_before = sched.get("notify", {}).get("before_minutes", 30)
 
-def find_today_courses(now, cfg):
-    """返回今天要上的课程列表"""
-    info = get_date_info(now, cfg)
+    date_str = now.strftime("%Y-%m-%d")
+    weekday = now.isoweekday()  # 1=周一..7=周日
 
-    # 假期/考试期/独立探索期 → 不上课
-    if info["holiday"] or info["exam"] or info["independent"]:
-        return []
+    cal = sched.get("school_calendar", {})
+    makeup_wd, reason = get_school_day(date_str, cal)
 
-    courses = cfg.get("courses", [])
-    js_wk = now.isoweekday()  # 1=周一..7=周日, 和 schedule.json 一致
-    return [c for c in courses if c["weekday"] == js_wk]
-
-def find_upcoming_courses(now, cfg, within_minutes=REMIND_BEFORE):
-    """返回 within_minutes 分钟内即将开始的课程"""
-    today_courses = find_today_courses(now, cfg)
     upcoming = []
 
-    for c in today_courses:
-        h, m = map(int, c["start"].split(":"))
-        course_start = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        diff_min = (course_start - now).total_seconds() / 60
+    # 正常上课日
+    if makeup_wd is None and reason in ("学期内", "补课日"):
+        effective_wd = makeup_wd if makeup_wd else weekday
+        for course in sched["courses"]:
+            if course["weekday"] != effective_wd:
+                continue
+            t = datetime.strptime(course["start"], "%H:%M").time()
+            course_dt = datetime.combine(now.date(), t, TZ)
+            diff = (course_dt - now).total_seconds() / 60
+            if 0 < diff <= notify_before:
+                upcoming.append((course, reason))
 
-        # 在 [-1, within_minutes] 分钟内 → 提醒（-1 容差）
-        if -1 <= diff_min <= within_minutes:
-            upcoming.append({
-                "course": c,
-                "start_dt": course_start,
-                "diff_min": diff_min,
-            })
+    # 补课日额外检查补的 weekday
+    if makeup_wd and reason == "补课日":
+        for course in sched["courses"]:
+            if course["weekday"] != makeup_wd:
+                continue
+            t = datetime.strptime(course["start"], "%H:%M").time()
+            course_dt = datetime.combine(now.date(), t, TZ)
+            diff = (course_dt - now).total_seconds() / 60
+            if 0 < diff <= notify_before:
+                upcoming.append((course, f"补课日（补周{['日','一','二','三','四','五','六'][makeup_wd]}）"))
 
-    return upcoming
+    # 特殊日期（考试等）
+    for sp in sched.get("special_dates", []):
+        if sp["date"] == date_str:
+            t = datetime.strptime("00:00", "%H:%M").time()
+            # 考试默认在上午，这里简化处理
+            sp_dt = datetime.combine(now.date(), datetime.strptime("09:00", "%H:%M").time(), TZ)
+            diff = (sp_dt - now).total_seconds() / 60
+            if 0 < diff <= notify_before + 120:  # 考试提前2小时也提醒
+                upcoming.append(({"name": sp["name"], "start": "09:00", "end": "--", "location": "考场", "type": sp.get("type", "special")}, sp.get("name", "")))
 
-def send_serverchan(sendkey, title, desp):
-    """通过 Server酱 (sct.ftqq.com) 推送到微信"""
-    if not sendkey:
-        print("[WARN] SERVERCHAN_KEY 未设置，跳过推送")
+    return upcoming, now
+
+def push(title, desp):
+    key = os.environ.get("SERVERCHAN_KEY", "")
+    if not key:
+        print("ERROR: SERVERCHAN_KEY not set")
         return False
-
-    url = f"https://sctapi.ftqq.com/{sendkey}.send"
-    data = urllib.parse.urlencode({"title": title, "desp": desp}).encode("utf-8")
-
+    url = f"https://sctapi.ftqq.com/{key}.send"
+    data = urllib.parse.urlencode({"title": title, "desp": desp}).encode()
+    req = urllib.request.Request(url, data=data)
     try:
-        req = urllib.request.Request(url, data=data, method="POST")
-        req.add_header("Content-Type", "application/x-www-form-urlencoded")
         with urllib.request.urlopen(req, timeout=10) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-            if body.get("code") == 0:
-                print(f"[OK] 推送成功: {title}")
+            result = json.loads(resp.read().decode())
+            if result.get("code") == 0:
+                print(f"PUSH OK: {title}")
                 return True
             else:
-                print(f"[ERROR] 推送失败: {body}")
+                print(f"PUSH FAIL: {result}")
                 return False
     except Exception as e:
-        print(f"[ERROR] 推送异常: {e}")
+        print(f"PUSH ERROR: {e}")
         return False
 
-def make_notice_id(course, start_dt):
-    """生成唯一 ID，用于去重"""
-    raw = f"{course['name']}|{dk(start_dt)}|{course['start']}"
-    return hashlib.md5(raw.encode()).hexdigest()
-
 def main():
-    schedule_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schedule.json")
-    cfg = load_schedule(schedule_path)
-
-    now = datetime.now(TZ).replace(tzinfo=None)  # 转到本地时间去掉 tz 方便比较
-    sendkey = os.environ.get("SERVERCHAN_KEY", "")
-
-    print(f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] 检查课表...")
-
-    upcoming = find_upcoming_courses(now, cfg, cfg.get("notify", {}).get("before_minutes", REMIND_BEFORE))
-    print(f"  30分钟内有 {len(upcoming)} 门课")
+    upcoming, now = find_upcoming()
+    print(f"[{now.strftime('%Y-%m-%d %H:%M')}] 检查完成，发现 {len(upcoming)} 个即将开始的事项")
 
     if not upcoming:
-        print("[DONE] 无即将开始的课，跳过推送")
+        print("无即将开始的课")
         return
 
-    # 从缓存读取已推送过的 ID
-    cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".notified_cache.json")
-    notified = set()
-    if os.path.exists(cache_path):
-        try:
-            with open(cache_path, "r") as f:
-                notified = set(json.load(f))
-        except Exception:
-            pass
+    for course, reason in upcoming:
+        title = f"📚 {course['name']} 即将开始"
+        desp = f"""**{course['name']}**
+⏰ 时间：{course['start']} - {course['end']}
+📍 地点：{course['location']}
+🏷️ 类型：{course.get('type', 'Lecture')}
+📅 日期：{now.strftime('%Y-%m-%d')}（{reason}）
 
-    pushed_new = []
-    for item in upcoming:
-        c = item["course"]
-        nid = make_notice_id(c, item["start_dt"])
-        if nid in notified:
-            print(f"  [SKIP] 已推送过: {c['name']}")
-            continue
-
-        diff_str = f"还有 {int(item['diff_min'])} 分钟" if item["diff_min"] >= 0 else "正在上课中"
-        title = f"📘 {c['name']} {diff_str}"
-        desp = (
-            f"**课程**: {c['name']}\n\n"
-            f"**时间**: {c['start']} - {c['end']}\n\n"
-            f"**地点**: {c.get('location', '未填')}\n\n"
-            f"**类型**: {c.get('type', 'Lecture')}\n\n"
-            f"**日期**: {dk(item['start_dt'])}"
-        )
-
-        ok = send_serverchan(sendkey, title, desp)
-        if ok:
-            notified.add(nid)
-            pushed_new.append(c["name"])
-
-    # 写回缓存（最多保留最近 100 条）
-    notified = list(notified)[-100:]
-    with open(cache_path, "w") as f:
-        json.dump(notified, f)
-
-    print(f"[DONE] 本次新推送: {pushed_new if pushed_new else '无'}")
+请准时参加！"""
+        push(title, desp)
 
 if __name__ == "__main__":
     main()
