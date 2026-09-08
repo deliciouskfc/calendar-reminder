@@ -576,6 +576,8 @@
   .btn-tool:hover { background: #f0f2fa; border-color: #5a6fd6; }
   .btn-tool.danger { color: #e74c3c; }
   .btn-tool.danger:hover { background: #fdf0ef; border-color: #e74c3c; }
+  .tt-select { padding: 5px 8px; font-size: 12px; border: 1px solid #dfe2eb; border-radius: 8px; background: #fff; color: #2c3550; max-width: 160px; }
+  .tt-select:focus { outline: none; border-color: #6a5acd; }
   /* ===== 退课列表 ===== */
   .drop-list { max-height: 46vh; overflow-y: auto; }
   .drop-item {
@@ -958,9 +960,14 @@
       <div class="schedule-header">
         <div class="schedule-title">📚 每周课程表</div>
         <div class="schedule-tools">
+          <select class="tt-select" id="ttSelect" title="切换课表" style="display:none;"></select>
+          <button class="btn-tool" id="ttNewBtn" title="新建课表" style="display:none;">＋</button>
+          <button class="btn-tool" id="ttRenameBtn" title="重命名" style="display:none;">✏️</button>
+          <button class="btn-tool danger" id="ttDeleteBtn" title="删除" style="display:none;">🗑</button>
           <button class="btn-tool" id="undoBtn" style="display:none;">↩ 撤销</button>
           <button class="btn-tool danger" id="clearCoursesBtn">🗑 退课</button>
           <button class="btn-tool" id="restoreCoursesBtn">➕ 加课</button>
+          <button class="btn-tool" id="logoutBtn2" title="退出登录" style="display:none;">⏻</button>
         </div>
         <div class="schedule-nav">
           <button class="nav-btn" id="schPrevBtn">‹</button>
@@ -1132,8 +1139,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.0.0';
-const APP_VERSION_CODE = 20;
+const APP_VERSION = '2.1.0';
+const APP_VERSION_CODE = 21;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1143,10 +1150,13 @@ const SUPABASE_READY = !SUPABASE_URL.includes('__') && !SUPABASE_ANON_KEY.includ
 const OWNER_EMAIL = '2214077724@qq.com';
 const UNLOCK_KEY = 'calendar_unlocked';
 const LAST_EMAIL_KEY = 'calendar_last_email';
-const LAST_SAVED_AT_KEY = 'calendar_last_saved_at';
+const LAST_SAVED_AT_KEY = 'calendar_last_saved_at_';   // + timetableId
+const ACTIVE_TT_KEY = 'calendar_active_tt_';            // + userId
 let sb = null;            // Supabase 客户端
 let currentUser = null;   // 当前登录账户 { id, email }
 let cloudPushTimer = null;
+let timetables = [];      // 该账户的所有课表
+let activeTimetableId = null;
 let events = [];        // 日程事件（exam / event，含具体日期）
 let courses = [];       // 课程（course，按 weekday 重复）
 let currentView = new Date();
@@ -1164,6 +1174,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.1.0', date: '2026-09-08', items: [
+    '一个账户可创建多个课表日历，下拉切换、新建、重命名、删除',
+    '课表工具栏新增显眼的 ⏻ 退出登录按钮',
+    '每个课表独立云端保存（saved_at 列）'
+  ]},
   { version: 'v2.0.0', date: '2026-09-08', items: [
     '全新账户系统：登录 / 注册，课表云端保存，跨设备同步',
     '同一账户在任意设备登录（每次打开需输密码解锁）',
@@ -2649,54 +2664,136 @@ async function enterApp() {
 
 async function loadAccountData() {
   try {
-    const { data, error } = await sb.from('timetables').select('data,updated_at').eq('user_id', currentUser.id).maybeSingle();
+    const { data, error } = await sb.from('timetables')
+      .select('id,name,data,saved_at,updated_at')
+      .eq('user_id', currentUser.id)
+      .order('updated_at', { ascending: false });
     if (error) { showToast('⚠️ 云端读取失败：' + error.message); return; }
-    const localSavedAt = Number(localStorage.getItem(LAST_SAVED_AT_KEY) || 0);
-    if (data && data.data && data.data.savedAt) {
-      if (data.data.savedAt > localSavedAt) {
-        // 云端较新 → 应用云端课表
-        events = data.data.events || [];
-        courses = data.data.courses || [];
-        localStorage.setItem(LAST_SAVED_AT_KEY, String(data.data.savedAt));
-        saveData();
-        renderCalendar(); renderEventsList(); renderSchedule();
-        showToast('⬇️ 已从云端同步课表');
-      } else if (localSavedAt > data.data.savedAt) {
-        scheduleCloudPush(true);   // 本机较新 → 推送到云端
-      }
-    } else {
-      // 云端为空 → 可将本机已有课表导入账户（拒绝过则不再询问）
+    timetables = data || [];
+    if (timetables.length === 0) {
       const hasLocal = localStorage.getItem(STORAGE_KEY) !== null;
       const isDefault = JSON.stringify({ events, courses }) === JSON.stringify({ events: [...DEFAULT_EVENTS], courses: [...DEFAULT_COURSES] });
       const declineKey = 'calendar_import_declined_' + currentUser.id;
-      if (hasLocal && !isDefault && !localStorage.getItem(declineKey)) {
-        const ok = confirm('检测到本机有课表数据。\n\n是否导入到账户 ' + currentUser.email + '？\n（确定 = 导入并上传云端　取消 = 账户保持空白）');
-        if (ok) scheduleCloudPush(true);
-        else localStorage.setItem(declineKey, '1');
-      }
+      const shouldImport = hasLocal && !isDefault && !localStorage.getItem(declineKey)
+        ? confirm('检测到本机有课表数据。\n\n是否导入到账户 ' + currentUser.email + '？\n（确定 = 导入并上传云端　取消 = 创建空白课表）')
+        : false;
+      if (shouldImport === false && hasLocal && !isDefault) localStorage.setItem(declineKey, '1');
+      await createTimetable(shouldImport ? '我的课表' : '空白课表', {
+        events: shouldImport ? [...events] : [],
+        courses: shouldImport ? [...courses] : [],
+        savedAt: Date.now()
+      });
+      return;
     }
+    const savedActive = localStorage.getItem(ACTIVE_TT_KEY + currentUser.id);
+    const target = timetables.find(t => t.id === savedActive) || timetables[0];
+    await switchTimetable(target.id, { silent: true });
   } catch (e) {
     showToast('⚠️ 云端同步异常：' + (e.message || e));
   }
 }
 
-function scheduleCloudPush(immediate) {
+async function switchTimetable(id, opts) {
+  const tt = timetables.find(t => t.id === id);
+  if (!tt) return;
+  activeTimetableId = id;
+  localStorage.setItem(ACTIVE_TT_KEY + currentUser.id, id);
+  const localKey = LAST_SAVED_AT_KEY + id;
+  const localSavedAt = Number(localStorage.getItem(localKey) || 0);
+  const cloudSavedAt = Number(tt.saved_at || (tt.data && tt.data.savedAt) || 0);
+  if (cloudSavedAt > localSavedAt) {
+    events = (tt.data && tt.data.events) || [];
+    courses = (tt.data && tt.data.courses) || [];
+    localStorage.setItem(localKey, String(cloudSavedAt));
+    saveData();
+    renderCalendar(); renderEventsList(); renderSchedule();
+    if (!opts || !opts.silent) showToast('⬇️ 已切换到「' + tt.name + '」');
+  } else if (localSavedAt > cloudSavedAt) {
+    scheduleCloudPush(true);
+    if (!opts || !opts.silent) showToast('📂 已切换到「' + tt.name + '」');
+  } else if (!opts || !opts.silent) {
+    showToast('📂 已切换到「' + tt.name + '」');
+  }
+  renderTimetableSwitcher();
+}
+
+async function createTimetable(name, initialData) {
   if (!sb || !currentUser) return;
+  const savedAt = Date.now();
+  const { data, error } = await sb.from('timetables').insert({
+    user_id: currentUser.id, name,
+    data: initialData || { events: [], courses: [], savedAt },
+    saved_at: savedAt, updated_at: new Date().toISOString()
+  }).select('id,name,data,saved_at,updated_at').single();
+  if (error) { showToast('⚠️ 创建失败：' + error.message); return null; }
+  timetables.unshift(data);
+  await switchTimetable(data.id, { silent: true });
+  showToast('✅ 已创建课表「' + name + '」');
+  return data;
+}
+
+async function deleteTimetable(id) {
+  if (!sb || !currentUser) return;
+  if (timetables.length <= 1) { showToast('⚠️ 至少保留一个课表'); return; }
+  const t = timetables.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm('删除课表「' + t.name + '」？此操作不可恢复。')) return;
+  const { error } = await sb.from('timetables').delete().eq('id', id);
+  if (error) { showToast('⚠️ 删除失败：' + error.message); return; }
+  timetables = timetables.filter(x => x.id !== id);
+  localStorage.removeItem(LAST_SAVED_AT_KEY + id);
+  if (activeTimetableId === id) {
+    await switchTimetable(timetables[0].id);
+  } else {
+    renderTimetableSwitcher();
+  }
+  showToast('🗑 已删除');
+}
+
+async function renameTimetable(id) {
+  if (!sb || !currentUser) return;
+  const t = timetables.find(x => x.id === id);
+  if (!t) return;
+  const name = prompt('重命名课表「' + t.name + '」：', t.name);
+  if (!name || !name.trim() || name.trim() === t.name) return;
+  const { error } = await sb.from('timetables').update({ name: name.trim(), updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) { showToast('⚠️ 重命名失败：' + error.message); return; }
+  t.name = name.trim();
+  renderTimetableSwitcher();
+  showToast('✏️ 已重命名');
+}
+
+function renderTimetableSwitcher() {
+  const sel = document.getElementById('ttSelect');
+  const show = sb && currentUser && timetables.length > 0;
+  ['ttSelect','ttNewBtn','ttRenameBtn','ttDeleteBtn','logoutBtn2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? '' : 'none';
+  });
+  if (sel && show) {
+    sel.innerHTML = timetables.map(t => `<option value="${t.id}" ${t.id===activeTimetableId?'selected':''}>${escapeHtml(t.name)}</option>`).join('');
+  }
+}
+
+function scheduleCloudPush(immediate) {
+  if (!sb || !currentUser || !activeTimetableId) return;
   clearTimeout(cloudPushTimer);
   cloudPushTimer = setTimeout(pushTimetableToCloud, immediate ? 0 : 900);
 }
 
 async function pushTimetableToCloud() {
-  if (!sb || !currentUser) return;
+  if (!sb || !currentUser || !activeTimetableId) return;
   try {
     const savedAt = Date.now();
-    localStorage.setItem(LAST_SAVED_AT_KEY, String(savedAt));
-    const { error } = await sb.from('timetables').upsert({
-      user_id: currentUser.id,
+    localStorage.setItem(LAST_SAVED_AT_KEY + activeTimetableId, String(savedAt));
+    const { error } = await sb.from('timetables').update({
       data: { events, courses, savedAt },
+      saved_at: savedAt,
       updated_at: new Date().toISOString()
-    });
+    }).eq('id', activeTimetableId);
     if (error) { showToast('⚠️ 云端保存失败：' + error.message); return; }
+    const t = timetables.find(x => x.id === activeTimetableId);
+    if (t) { t.saved_at = savedAt; t.data = { events, courses, savedAt }; }
   } catch (e) {
     showToast('⚠️ 云端保存异常：' + (e.message || e));
   }
@@ -2705,22 +2802,44 @@ async function pushTimetableToCloud() {
 function updateAccountBar() {
   const bar = document.getElementById('accountBar');
   const btn = document.getElementById('logoutBtn');
+  const btn2 = document.getElementById('logoutBtn2');
   if (bar) bar.textContent = currentUser ? '👤 ' + currentUser.email : (SUPABASE_READY ? '未登录' : '未启用账户（未配置 Supabase）');
   if (btn) btn.style.display = (sb && currentUser) ? '' : 'none';
+  if (btn2) btn2.style.display = (sb && currentUser) ? '' : 'none';
+}
+
+function doLogout() {
+  if (!confirm('退出当前账户？\n本机数据保留，但其他设备将看不到最新修改。')) return;
+  sb.auth.signOut().then(() => {
+    currentUser = null;
+    activeTimetableId = null;
+    timetables = [];
+    sessionStorage.removeItem(UNLOCK_KEY);
+    updateAccountBar();
+    renderTimetableSwitcher();
+    renderAuth('login');
+  });
 }
 
 (async function initAccount() {
   if (!SUPABASE_READY || !window.supabase) { sb = null; updateAccountBar(); return; }
   try { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch (e) { sb = null; return; }
   const lb = document.getElementById('logoutBtn');
-  if (lb) lb.onclick = async () => {
-    if (!confirm('退出当前账户？\n本机数据保留，但其他设备将看不到最新修改。')) return;
-    await sb.auth.signOut();
-    currentUser = null;
-    sessionStorage.removeItem(UNLOCK_KEY);
-    updateAccountBar();
-    renderAuth('login');
+  if (lb) lb.onclick = doLogout;
+  const lb2 = document.getElementById('logoutBtn2');
+  if (lb2) lb2.onclick = doLogout;
+  const sel = document.getElementById('ttSelect');
+  if (sel) sel.onchange = (e) => { if (e.target.value) switchTimetable(e.target.value); };
+  const newBtn = document.getElementById('ttNewBtn');
+  if (newBtn) newBtn.onclick = async () => {
+    const name = prompt('新课表名称：', '新课表');
+    if (!name || !name.trim()) return;
+    await createTimetable(name.trim());
   };
+  const rnBtn = document.getElementById('ttRenameBtn');
+  if (rnBtn) rnBtn.onclick = () => { if (activeTimetableId) renameTimetable(activeTimetableId); };
+  const delBtn = document.getElementById('ttDeleteBtn');
+  if (delBtn) delBtn.onclick = () => { if (activeTimetableId) deleteTimetable(activeTimetableId); };
   const { data } = await sb.auth.getSession();
   const session = data && data.session;
   if (!session) { renderAuth('login'); return; }
