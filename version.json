@@ -1,7 +1,7 @@
 {
-  "version": "1.4.0",
-  "versionCode": 8,
+  "version": "1.4.1",
+  "versionCode": 9,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "课程支持关联本地课件文件（PDF等），课表显示课件角标\n手机端课程菜单可添加、打开、删除课件\n文件保存在浏览器本地存储空间，自动申请持久化配额",
+  "updateLog": "iPad/平板自动进入手机版页面\n更新日志弹窗新增「检查更新」按钮，发现新版本自动更新\n拖动换课改为长按触发，普通滑动不再误触\n修复 iOS PWA 更新跳转错误；页面网络优先，发版后一次刷新即见新版",
   "forceUpdate": false
 }

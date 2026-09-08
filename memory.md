@@ -2,12 +2,14 @@
 
 > 目的：记录本项目所有实现方式。新会话先读本文件，避免重复探索代码。
 > **每次改完代码必须顺手更新本文件**（变更点 + 行号区间 + 版本号）。
-> 最后更新：v1.4.0 课件文件功能。
+> 最后更新：v1.4.1（iPad 路由 + 手动检查更新 + 长按拖拽）。
 
 ## 一、项目概览
 - 纯静态 PWA 课程表/日历提醒应用，**无后端**，部署 GitHub Pages：https://deliciouskfc.github.io/calendar-reminder/
 - git push main → 自动上线。后台任务由 GitHub Actions 承担（提醒推送、APK 构建）
 - 电脑端 = index.html，手机端 = mobile.html（两页完全独立、各自内联 JS/CSS，改功能需同步改两处）
+- **设备路由（v1.4.1）**：index.html `<head>` 内联脚本把 iOS（含 iPadOS 伪装 Mac UA：platform==='MacIntel' && maxTouchPoints>1）和 Android 重定向到 `./mobile.html`（保 hash，sessionStorage.forceDesktop 可逃逸）。manifest start_url 是 ./index.html，所以 PWA 首页也会走此路由
+- 课件文件功能**只在 mobile.html**（桌面版无此功能，触屏设备一律路由到手机版）
 - 浏览器数据存 localStorage，**不跨设备同步**；schedule.json 是给提醒脚本用的仓库端副本（手动维护，与网页不联动）
 
 ## 二、文件清单
@@ -50,16 +52,24 @@
   - document click/scroll/resize 自动 `hidePopup()`（2119-2121）
 - 编辑弹窗 `openModal(event, course)(1735)`：`editingId/editingKind` 区分类型，closeModal(1803)；遮罩点击关闭(2238)
 - 加课表单：星期**多选 chips**（周一~周日），选多天生成多门同名课（v1.3.2）
-- 拖拽换位：`startCourseDrag(1829)`，拖前快照进 `undoStack`（可多次撤销），拖到占用格互换 weekday/start/end
+- 拖拽换位：`startCourseDrag`，拖前快照进 `undoStack`（可多次撤销），拖到占用格互换 weekday/start/end
+  - **长按触发（v1.4.1）**：触摸必须按住 280ms（HOLD_MS）才激活拖拽（带 navigator.vibrate 震动），未激活时手指移动 >12px（MOVE_TOL）= 正常滚动，取消拖拽并置 justDraggedAt 抑制 click；激活后 touchmove preventDefault 阻止滚动。鼠标 pointerType='mouse' 保持即时拖拽。配套 CSS：`.tt-course { touch-action: pan-y; -webkit-touch-callout: none; }`（原来是 none，会完全封死从课程块起的滚动）
 - 提醒：`updateReminderStatus(2147)`、`checkReminders` 每 15s(2364)、`new Notification`（需页面前台 + 权限；iOS 需 PWA 添加到主屏）
 - 电脑端差异：日历视图**不显示课程标签**（只显示考试/事件），课程管理在课表/退课列表
 
 ## 六、发版流程（每次新功能必做）
 1. 改代码（功能通常两页都要同步）
 2. 两页各自改：`APP_VERSION` / `APP_VERSION_CODE` / `CHANGELOG` 数组头部加新条目
-3. sw.js：`CACHE = 'calendar-v(N+1)'`
+3. sw.js：`CACHE = 'calendar-v(N+1)'`（**必须与 versionCode 一致**：'calendar-v' + versionCode，两页的缓存清理逻辑依赖这个规则）
 4. version.json：version / versionCode / updateLog
 5. git commit + push（push 即上线，无需其他操作）
+
+## 六·一、版本更新机制（v1.4.1）
+- 自动检查：两页启动 2 秒后 `checkForUpdate()`，fetch version.json（?t= 防缓存），versionCode 或 version 更新 → `showUpdateDialog`（稍后/立即更新）
+- 手动检查：更新日志弹窗内「🔄 检查更新」按钮 → `manualCheckUpdate(btn)`，发现新版**直接自动** `applyWebUpdate()`（清空全部 caches + reg.update() + reload）；已是最新 → showToast
+- `applyWebUpdate()`：网页 / iOS PWA 的更新方式；Android standalone 仍走 APK 下载（downloadUrl）
+- **sw.js fetch 策略**：页面导航（mode==='navigate' 或 accept 含 text/html）= 网络优先，离线回退缓存；其他资源 = 缓存优先回填。发版后一次刷新即见新版
+- 两页各有缓存清理：只保留 `'calendar-v' + APP_VERSION_CODE`（v1.4.1 修复了硬编码 calendar-v3 会误删当前缓存的旧 bug）
 
 ## 七、服务端提醒
 - check.py：`load_schedule()` 读 schedule.json → `find_upcoming()` 找 30 分钟内开始的项 → `push()` 走 WxPusher（SPT：env `WXPUSHER_SPT`，默认含 SPT）
@@ -79,4 +89,5 @@
 - v1.3.0~v1.3.2 (09-08)：加课表单化、拖拽撤销、星期多选
 - v1.4.0（邮箱，已回退删除）
 - v1.4.0 (09-08)：**课程关联本地课件文件**（手机端 IndexedDB，见"三、数据模型"）— 复用了回退前的版本号
-- 当前版本：v1.4.0 / versionCode 8 / sw cache calendar-v8
+- v1.4.1 (09-08)：iPad/Android 自动路由到手机版；更新日志弹窗加「🔄 检查更新」（发现新版自动更新）；拖拽改长按 280ms 触发；修 iOS PWA 更新误跳 APK bug；sw.js 页面改网络优先；修 calendar-v3 硬编码缓存清理 bug
+- 当前版本：v1.4.1 / versionCode 9 / sw cache calendar-v9

@@ -2,6 +2,24 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<script>
+/* 触屏设备（iPhone / iPad / Android）自动进入手机版页面
+   iPadOS Safari 伪装成 Mac UA，需用 platform + maxTouchPoints 识别 */
+(function () {
+  try {
+    var ua = navigator.userAgent || '';
+    var isIOS = /iPad|iPhone|iPod/.test(ua) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var isAndroid = /Android/.test(ua);
+    if ((isIOS || isAndroid) && !sessionStorage.getItem('forceDesktop')) {
+      var page = location.pathname.split('/').pop();
+      if (page === '' || page === 'index.html') {
+        location.replace('./mobile.html' + (location.hash || ''));
+      }
+    }
+  } catch (e) {}
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f8ef7">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -495,8 +513,9 @@
     transition: box-shadow 0.15s, transform 0.15s;
     z-index: 2;
     box-sizing: border-box;
-    touch-action: none;
+    touch-action: pan-y;   /* 允许纵向滚动；拖拽由长按激活后 JS 阻止 */
     -webkit-user-select: none;
+    -webkit-touch-callout: none;   /* 防长按弹出系统菜单 */
     user-select: none;
   }
   .tt-course:hover {
@@ -1047,6 +1066,7 @@
     <h3>📜 更新日志</h3>
     <div class="changelog-list" id="changelogList"></div>
     <div class="modal-actions">
+      <button class="btn" id="checkUpdateBtn">🔄 检查更新</button>
       <button class="btn btn-primary" id="changelogCloseBtn">关闭</button>
     </div>
   </div>
@@ -1056,8 +1076,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.4.0';
-const APP_VERSION_CODE = 8;
+const APP_VERSION = '1.4.1';
+const APP_VERSION_CODE = 9;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1077,6 +1097,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.4.1', date: '2026-09-08', items: [
+    'iPad / 平板打开本页面自动进入手机版，可正常使用课件功能',
+    '更新日志弹窗新增「🔄 检查更新」按钮，发现新版本自动清缓存并更新',
+    '拖动换课改为长按约 0.3 秒触发，普通滑动不再误触'
+  ]},
   { version: 'v1.4.0', date: '2026-09-08', items: [
     '手机端课程支持关联本地课件文件（PDF / PPT / DOC / 图片等）',
     '文件保存在浏览器本地存储空间，退课时同步清理'
@@ -1819,6 +1844,11 @@ function startCourseDrag(ev, course, block) {
   if (!ttLayout) return;
   const startX = ev.clientX, startY = ev.clientY;
   let dragging = false, hint = null, lastTarget = null;
+  // 触摸需长按 280ms 才启动拖拽，防止正常滑动误触；鼠标保持即时拖拽
+  const isTouch = ev.pointerType === 'touch';
+  const HOLD_MS = 280, MOVE_TOL = 12;
+  let activated = !isTouch;
+  let holdTimer = null;
   // 拖拽前快照所有课程的 weekday/start/end（用于撤销）
   const snapshot = courses.map(c => ({ id: c.id, weekday: c.weekday, start: c.start, end: c.end }));
 
@@ -1837,11 +1867,25 @@ function startCourseDrag(ev, course, block) {
   };
   const removeHint = () => { if (hint) { hint.remove(); hint = null; } };
 
+  const beginDrag = () => {
+    dragging = true;
+    block.classList.add('dragging');
+    if (isTouch && navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
+  };
+
+  const cleanupListeners = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onCancel);
+    if (isTouch) document.removeEventListener('touchmove', onTouchMove);
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  };
+
   const onMove = (e) => {
     if (!dragging) {
+      if (!activated) return;
       if (Math.abs(e.clientX - startX) < 8 && Math.abs(e.clientY - startY) < 8) return;
-      dragging = true;
-      block.classList.add('dragging');
+      beginDrag();
     }
     e.preventDefault();
     block.style.transform = `translate(${e.clientX - startX}px, ${e.clientY - startY}px)`;
@@ -1868,10 +1912,22 @@ function startCourseDrag(ev, course, block) {
     lastTarget = { col: t.col, weekday: t.weekday, slot: t.slot, newStart, newEnd, occupant };
   };
 
+  // 触摸：长按激活前的滑动 = 正常滚动/滑动，取消拖拽意图
+  const onTouchMove = (e) => {
+    if (!dragging) {
+      const t = e.touches && e.touches[0];
+      if (t && (Math.abs(t.clientX - startX) > MOVE_TOL || Math.abs(t.clientY - startY) > MOVE_TOL)) {
+        activated = false;
+        justDraggedAt = Date.now();   // 滑动后抑制误触 click（不弹课程菜单）
+        cleanupListeners();
+      }
+      return;                          // 不 preventDefault → 页面正常滚动
+    }
+    e.preventDefault();                // 拖拽中 → 阻止页面滚动
+  };
+
   const finish = (e, cancelled) => {
-    document.removeEventListener('pointermove', onMove);
-    document.removeEventListener('pointerup', onUp);
-    document.removeEventListener('pointercancel', onCancel);
+    cleanupListeners();
     block.classList.remove('dragging');
     block.style.transform = '';
     clearHighlight();
@@ -1915,6 +1971,14 @@ function startCourseDrag(ev, course, block) {
   document.addEventListener('pointermove', onMove, { passive: false });
   document.addEventListener('pointerup', onUp);
   document.addEventListener('pointercancel', onCancel);
+  if (isTouch) {
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      activated = true;
+      beginDrag();
+    }, HOLD_MS);
+  }
 }
 
 function updateUndoBtn() {
@@ -2338,6 +2402,7 @@ document.getElementById('changelogBtn').onclick = () => {
   changelogOverlay.classList.add('active');
 };
 document.getElementById('changelogCloseBtn').onclick = () => changelogOverlay.classList.remove('active');
+document.getElementById('checkUpdateBtn').onclick = (e) => manualCheckUpdate(e.currentTarget);
 changelogOverlay.onclick = (e) => {
   if (e.target === changelogOverlay) changelogOverlay.classList.remove('active');
 };
@@ -2413,15 +2478,52 @@ function showUpdateDialog(remote) {
   document.body.appendChild(overlay);
   dialog.querySelector('#updLater').onclick = () => overlay.remove();
   dialog.querySelector('#updNow').onclick = () => {
-    // PWA 模式下重新加载即可（SW 缓存更新）；APK 模式下跳转下载
+    // Android 独立模式（APK/桌面图标）→ 跳 APK 下载；其余（网页 / iOS PWA）→ 清缓存刷新
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
                          (navigator.standalone === true);
-    if (isStandalone) {
+    if (isStandalone && /Android/.test(navigator.userAgent)) {
       window.location.href = remote.downloadUrl;
     } else {
-      window.location.reload();
+      applyWebUpdate();
     }
   };
+}
+
+// 清除所有 SW 缓存并强制刷新（网页 / iOS PWA 的更新方式）
+async function applyWebUpdate() {
+  try {
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) { try { await reg.update(); } catch (e) {} }
+    }
+  } catch (e) {}
+  location.reload();
+}
+
+// 手动检查更新（更新日志弹窗按钮）：发现新版本直接自动更新
+async function manualCheckUpdate(btn) {
+  const oldText = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ 检查中…';
+  try {
+    const res = await fetch(VERSION_CHECK_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const remote = await res.json();
+    const hasNew = remote.versionCode > APP_VERSION_CODE ||
+                   (remote.version && compareVersion(remote.version, APP_VERSION) > 0);
+    if (hasNew) {
+      btn.textContent = '⬇️ 发现新版本 v' + remote.version + '，正在更新…';
+      applyWebUpdate();
+      return;
+    }
+    showToast('✅ 已是最新版本 v' + APP_VERSION);
+  } catch (e) {
+    showToast('⚠️ 检查失败，请检查网络');
+  }
+  btn.disabled = false; btn.textContent = oldText;
 }
 
 async function checkForUpdate() {
@@ -2454,11 +2556,11 @@ if ('serviceWorker' in navigator) {
       });
     }).catch(() => {});
   });
-  // 强制注销所有旧 Service Worker（解决 v1 缓存卡死问题）
+  // 清理过期缓存（只保留当前版本的 cache，名字与 sw.js 中 CACHE 保持一致规则 calendar-v + versionCode）
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => {
       if (r.active && r.active.scriptURL.endsWith('sw.js')) {
-        caches.keys().then(keys => keys.forEach(k => { if (k !== 'calendar-v3') caches.delete(k); }));
+        caches.keys().then(keys => keys.forEach(k => { if (k !== 'calendar-v' + APP_VERSION_CODE) caches.delete(k); }));
       }
     });
   });
