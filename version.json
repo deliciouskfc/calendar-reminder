@@ -1,7 +1,7 @@
 {
-  "version": "2.4.1",
-  "versionCode": 31,
+  "version": "2.5.0",
+  "versionCode": 32,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "「日志」弹窗新增留言板按钮，日历页可直接进入；管理员从留言板底部「用户管理」管理所有账户",
+  "updateLog": "留言实时读取，发送后立即显示；右上角新增留言入口（带未读数字角标）；顶部新增刷新按钮",
   "forceUpdate": false
 }

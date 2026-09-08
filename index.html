@@ -944,9 +944,11 @@
 <div class="container">
   <header>
     <h1>📅 我的日历 & 课表</h1>
-    <div class="header-actions">
+    <div class="header-actions" style="flex-wrap:wrap;">
       <button class="btn" id="todayBtn">今天</button>
+      <button class="btn" id="refreshPageBtn">🔄 刷新</button>
       <button class="btn" id="changelogBtn">📜 更新日志</button>
+      <button class="btn" id="msgBoardTopBtn" style="display:none; position:relative;">💬 留言<span id="msgTopBadge" style="display:none; position:absolute; top:-6px; right:-6px; min-width:18px; height:18px; border-radius:9px; background:#e74c3c; color:#fff; font-size:11px; font-weight:700; align-items:center; justify-content:center; padding:0 4px; box-shadow:0 1px 4px rgba(0,0,0,0.25);">0</span></button>
       <button class="btn btn-primary" id="addBtn">+ 新增</button>
     </div>
   </header>
@@ -1185,8 +1187,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.4.1';
-const APP_VERSION_CODE = 31;
+const APP_VERSION = '2.5.0';
+const APP_VERSION_CODE = 32;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1220,6 +1222,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.5.0', date: '2026-09-08', items: [
+    '留言实时读取：打开会话、发送留言立即显示，轮询加快到 20 秒',
+    '右上角新增「💬 留言」入口（日志旁），红色数字显示未读留言数',
+    '顶部新增「🔄 刷新」按钮，切换账户后一键刷新课表数据'
+  ]},
   { version: 'v2.4.1', date: '2026-09-08', items: [
     '「📜 日志」弹窗新增「💬 留言板」按钮，日历页也能直接进入留言板',
     '管理员入口路径：留言板底部「👥 用户管理」'
@@ -2601,6 +2608,8 @@ document.getElementById('msgBoardBtn2').onclick = () => {
   changelogOverlay.classList.remove('active');
   openMessageBoard();
 };
+document.getElementById('msgBoardTopBtn').onclick = () => openMessageBoard();
+document.getElementById('refreshPageBtn').onclick = () => location.reload();
 changelogOverlay.onclick = (e) => {
   if (e.target === changelogOverlay) changelogOverlay.classList.remove('active');
 };
@@ -3145,11 +3154,13 @@ function updateAccountBar() {
   const btn2 = document.getElementById('logoutBtn2');
   const msgBtn = document.getElementById('msgBoardBtn');
   const msgBtn2 = document.getElementById('msgBoardBtn2');
+  const msgTopBtn = document.getElementById('msgBoardTopBtn');
   if (bar) bar.textContent = currentUser ? '👤 ' + currentUser.email : (SUPABASE_READY ? '未登录' : '未启用账户（未配置 Supabase）');
   if (btn) btn.style.display = (sb && currentUser) ? '' : 'none';
   if (btn2) btn2.style.display = (sb && currentUser) ? '' : 'none';
   if (msgBtn) msgBtn.style.display = (sb && currentUser) ? '' : 'none';
   if (msgBtn2) msgBtn2.style.display = (sb && currentUser) ? '' : 'none';
+  if (msgTopBtn) msgTopBtn.style.display = (sb && currentUser) ? '' : 'none';
 }
 
 function doLogout() {
@@ -3221,24 +3232,37 @@ async function loadMessages(silent) {
   if (!sb || !currentUser) return;
   try {
     const { data, error } = await sb.from('messages').select('*').order('created_at', { ascending: true });
-    if (error) { if (!silent) showToast('⚠️ 留言读取失败：' + error.message); return; }
+    if (error) {
+      if (!silent) showToast('⚠️ 留言读取失败：' + error.message);
+      const lv = document.getElementById('msgListView');
+      if (lv && document.getElementById('msgBoardModal')) {
+        lv.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">⚠️ 留言读取失败：${escapeHtml(error.message)}<br><br>点击「🔄 刷新」重试</div>`;
+      }
+      return;
+    }
     msgCache = data || [];
     updateMsgBadge();
   } catch (e) { /* 静默 */ }
 }
 
 function updateMsgBadge() {
-  const btn = document.getElementById('msgBoardBtn');
-  if (!btn) return;
   const n = currentUser ? msgCache.filter(m => m.recipient_id === currentUser.id && !m.is_read).length : 0;
-  btn.textContent = n > 0 ? `💬 留言板（${n}）` : '💬 留言板';
+  const menuBtn = document.getElementById('msgBoardBtn');
+  if (menuBtn) menuBtn.textContent = n > 0 ? `💬 留言板（${n}）` : '💬 留言板';
+  const clBtn = document.getElementById('msgBoardBtn2');
+  if (clBtn) clBtn.textContent = n > 0 ? `💬 留言板（${n}）` : '💬 留言板';
+  const badge = document.getElementById('msgTopBadge');
+  if (badge) {
+    badge.textContent = n > 99 ? '99+' : String(n);
+    badge.style.display = n > 0 ? 'flex' : 'none';
+  }
 }
 
 function startMsgPolling() {
   clearInterval(msgTimer);
   if (!sb || !currentUser) return;
   loadMessages(true);
-  msgTimer = setInterval(() => loadMessages(true), 60000);
+  msgTimer = setInterval(() => loadMessages(true), 20000);
 }
 
 // 按会话对象分组：[{peer, last, unread, count}]
@@ -3298,7 +3322,8 @@ function openMessageBoard() {
   document.getElementById('msgClose').onclick = () => modal.remove();
   // 点击标题返回会话列表
   document.getElementById('msgTitle').onclick = () => showMsgList();
-  showMsgList();
+  // 每次打开都实时拉取最新留言
+  document.getElementById('msgListView').innerHTML = '<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载中...</div>';
   loadMessages().then(() => { if (document.getElementById('msgBoardModal')) showMsgList(); });
 }
 
@@ -3422,9 +3447,15 @@ function showMsgThread() {
 function openMsgThread(peer) {
   msgThreadPeer = peer;
   showMsgThread();
-  markThreadRead(peer.id);
   const inp = document.getElementById('msgReplyInput');
   if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 100); }
+  // 实时拉取该会话最新留言
+  loadMessages(true).then(() => {
+    if (msgThreadPeer && msgThreadPeer.id === peer.id && document.getElementById('msgBoardModal')) {
+      showMsgThread();
+      markThreadRead(peer.id);
+    }
+  });
 }
 
 async function markThreadRead(peerId) {
@@ -3447,16 +3478,25 @@ async function sendMsg() {
   btn.disabled = true;
   btn.textContent = '发送中…';
   try {
-    const { error } = await sb.from('messages').insert({
+    const { data: inserted, error } = await sb.from('messages').insert({
       sender_id: currentUser.id, sender_email: currentUser.email,
       recipient_id: msgThreadPeer.id, recipient_email: msgThreadPeer.email || '',
       content
-    });
+    }).select().single();
     if (error) { showToast('⚠️ 发送失败：' + error.message); return; }
     inp.value = '';
-    await loadMessages(true);
+    // 立即本地显示，无需等待刷新
+    if (inserted && !msgCache.some(m => m.id === inserted.id)) {
+      msgCache.push(inserted);
+      msgCache.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+    }
+    updateMsgBadge();
     if (msgThreadPeer && document.getElementById('msgThreadView').style.display !== 'none') showMsgThread();
     showToast('✅ 已发送');
+    // 后台再同步一次，确保与云端一致
+    loadMessages(true).then(() => {
+      if (msgThreadPeer && document.getElementById('msgThreadView').style.display !== 'none') showMsgThread();
+    });
   } catch (e) {
     showToast('⚠️ 发送异常：' + (e.message || e));
   } finally {
