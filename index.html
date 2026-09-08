@@ -1187,8 +1187,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.7.0';
-const APP_VERSION_CODE = 37;
+const APP_VERSION = '2.7.1';
+const APP_VERSION_CODE = 38;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1222,6 +1222,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.7.1', date: '2026-09-08', items: [
+    '修复实时推送不生效的问题：显式携带登录令牌订阅通道，令牌刷新后自动同步',
+    '留言板底部新增推送连接状态显示，推送断开自动重连'
+  ]},
   { version: 'v2.7.0', date: '2026-09-08', items: [
     '留言改为服务器实时推送（Supabase Realtime）：对方发送/已读即刻同步，无需等待轮询',
     '修复退出留言板后气泡消失的问题',
@@ -3301,24 +3305,68 @@ function startMsgPolling(ms) {
     // 留言板已关闭时，从 3 秒兜底轮询自动降回 15 秒（实时推送为主）
     if (msgPollMs === 3000 && !document.getElementById('msgBoardModal')) { startMsgPolling(); return; }
     loadMessages(true);
+    // 每 60 秒把最新令牌同步给 Realtime，防止令牌刷新后推送失效
+    if (sb && currentUser && msgRealtimeOk && Date.now() - msgLastSetAuth > 60000) {
+      msgLastSetAuth = Date.now();
+      sb.auth.getSession().then(s2 => {
+        const t = s2 && s2.data && s2.data.session ? s2.data.session.access_token : null;
+        if (t) sb.realtime.setAuth(t);
+      }).catch(() => {});
+    }
   }, msgPollMs);
 }
 
 /* ---------- ⚡ 实时推送（Supabase Realtime）：留言变动服务器立即下发 ---------- */
 let msgChannel = null;
 let msgChannelUid = null;
+let msgRealtimeOk = false;
+let msgRtRetryTimer = null;
+let msgLastSetAuth = 0;
 
-function setupMsgRealtime() {
+function updateMsgRealtimeStatus() {
+  const footer = document.getElementById('msgFooter');
+  if (!footer) return;
+  let st = document.getElementById('msgRtStatus');
+  if (!st) {
+    st = document.createElement('div');
+    st.id = 'msgRtStatus';
+    st.style.cssText = 'width:100%; font-size:11px; color:#98a0b3; margin-bottom:2px;';
+    footer.insertBefore(st, footer.firstChild);
+  }
+  st.textContent = msgRealtimeOk ? '⚡ 实时推送已连接' : '↻ 推送未连接，轮询模式';
+  st.style.color = msgRealtimeOk ? '#2e9e5b' : '#c07f00';
+}
+
+async function setupMsgRealtime() {
   if (!sb || !currentUser) return;
   if (msgChannel && msgChannelUid === currentUser.id) return; // 当前用户已建立推送
   try {
     if (msgChannel) { sb.removeChannel(msgChannel); msgChannel = null; }
+    if (msgRtRetryTimer) { clearTimeout(msgRtRetryTimer); msgRtRetryTimer = null; }
+    msgRealtimeOk = false;
     msgChannelUid = currentUser.id;
+    // 关键：恢复登录（getSession）不会触发认证事件，必须显式把用户令牌交给 Realtime，否则服务器不推送
+    try {
+      const ses = await sb.auth.getSession();
+      const token = ses && ses.data && ses.data.session ? ses.data.session.access_token : null;
+      if (token) { sb.realtime.setAuth(token); msgLastSetAuth = Date.now(); }
+    } catch (e) { /* 静默 */ }
     msgChannel = sb.channel('msg-board-' + currentUser.id.slice(0, 8))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' },
         (payload) => { onMsgPush(payload); })
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') loadMessages(true); // 订阅成功后校准一次全量数据
+        if (status === 'SUBSCRIBED') {
+          msgRealtimeOk = true;
+          updateMsgRealtimeStatus();
+          loadMessages(true); // 订阅成功后校准一次全量数据
+        } else {
+          // CHANNEL_ERROR / TIMED_OUT / CLOSED：5 秒后自动重建通道（轮询继续兜底）
+          msgRealtimeOk = false;
+          updateMsgRealtimeStatus();
+          if (!msgRtRetryTimer && sb && currentUser) {
+            msgRtRetryTimer = setTimeout(() => { msgRtRetryTimer = null; msgChannel = null; setupMsgRealtime(); }, 5000);
+          }
+        }
       });
   } catch (e) { /* 实时推送不可用时静默，轮询兜底 */ }
 }
@@ -3416,6 +3464,7 @@ function openMessageBoard() {
   // 每次打开都实时拉取最新留言
   document.getElementById('msgListView').innerHTML = '<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载中...</div>';
   startMsgPolling(3000); // 留言板打开期间 3 秒兜底轮询（实时推送为主）
+  updateMsgRealtimeStatus();
   loadMessages().then(() => { if (document.getElementById('msgBoardModal')) showMsgList(); });
 }
 
