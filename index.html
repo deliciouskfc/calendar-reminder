@@ -888,6 +888,12 @@
     background: none; border: none; margin-top: 14px;
     font-size: 11px; color: #b0b7c6; text-decoration: underline; cursor: pointer;
   }
+  /* 账户登录/注册选项卡 */
+  .auth-tabs { display: flex; gap: 6px; margin-top: 12px; background: #eef1f8; border-radius: 10px; padding: 4px; }
+  .auth-tab { flex: 1; border: none; background: transparent; padding: 9px 0; border-radius: 8px; font-size: 14px; font-weight: 600; color: #6b7488; cursor: pointer; }
+  .auth-tab.active { background: #fff; color: #2c3550; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); }
+  /* 账户信息条（更新日志弹窗内） */
+  .account-bar { text-align: center; font-size: 12px; color: #8a93a8; padding: 8px 0 2px; border-top: 1px solid #eef0f6; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -1112,21 +1118,35 @@
   <div class="modal">
     <h3>📜 更新日志</h3>
     <div class="changelog-list" id="changelogList"></div>
+    <div class="account-bar" id="accountBar"></div>
     <div class="modal-actions">
       <button class="btn btn-update" id="checkUpdateBtn">🔄 检查更新</button>
+      <button class="btn" id="logoutBtn" style="display:none;">⏻ 退出登录</button>
       <button class="btn btn-primary" id="changelogCloseBtn">关闭</button>
     </div>
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.6.0';
-const APP_VERSION_CODE = 13;
+const APP_VERSION = '2.0.0';
+const APP_VERSION_CODE = 20;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
+/* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
+const SUPABASE_URL = 'https://ygzgdtfkitymxhxuyrjt.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_RlsFCT7-WgItjCEv6DAYgg_oRCzwuZq';
+const SUPABASE_READY = !SUPABASE_URL.includes('__') && !SUPABASE_ANON_KEY.includes('__');
+const OWNER_EMAIL = '2214077724@qq.com';
+const UNLOCK_KEY = 'calendar_unlocked';
+const LAST_EMAIL_KEY = 'calendar_last_email';
+const LAST_SAVED_AT_KEY = 'calendar_last_saved_at';
+let sb = null;            // Supabase 客户端
+let currentUser = null;   // 当前登录账户 { id, email }
+let cloudPushTimer = null;
 let events = [];        // 日程事件（exam / event，含具体日期）
 let courses = [];       // 课程（course，按 weekday 重复）
 let currentView = new Date();
@@ -1144,6 +1164,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.0.0', date: '2026-09-08', items: [
+    '全新账户系统：登录 / 注册，课表云端保存，跨设备同步',
+    '同一账户在任意设备登录（每次打开需输密码解锁）',
+    '其他人可注册自己的账户，数据相互隔离，未登录不可见'
+  ]},
   { version: 'v1.6.0', date: '2026-09-08', items: [
     '新增应用密码锁：首次打开设置密码，重新打开需解锁'
   ]},
@@ -1363,6 +1388,7 @@ function loadData() {
 }
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ events, courses }));
+  if (sb && currentUser) scheduleCloudPush();   // 已登录 → 防抖推送到云端
 }
 
 /* ================================================================
@@ -2479,107 +2505,232 @@ setInterval(checkReminders, 15000);
 checkReminders();
 
 /* ================================================================
-   密码锁：首次打开要求设置（两遍校验）；已有密码则每次新会话解锁
-   密码只存 SHA-256 哈希，不存明文；sessionStorage 记住本会话已解锁
+   账户系统（Supabase）：登录 / 注册 / 每会话解锁 / 云端同步
+   - 课表存 timetables 表（行级隔离，仅本人可读写）
+   - 每台设备每次新会话需输密码解锁（sessionStorage 记住本会话）
+   - 未配置 SUPABASE_URL 时自动跳过（本地模式）
 ================================================================ */
-const PW_HASH_KEY = 'calendar_pw_hash';
-const PW_UNLOCK_KEY = 'calendar_unlocked';
-
-async function sha256Hex(str) {
-  try {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-  } catch (e) {
-    // 非安全上下文兜底（非加密级）
-    let h = 5381;
-    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
-    return 'fb' + h.toString(16).padStart(8, '0');
-  }
-}
-
-function showLock() {
-  document.getElementById('lockOverlay').classList.remove('hidden');
-}
-
 function hideLock() {
   document.getElementById('lockOverlay').classList.add('hidden');
 }
 
-function lockErr(msg) {
-  const el = document.getElementById('lockErr');
+function authErr(msg) {
+  const el = document.getElementById('authErr');
   if (el) el.textContent = msg || '';
 }
 
-function renderLock(mode) {
-  // mode: 'setup' 首次设置（两遍校验） | 'unlock' 解锁
+function authBusy(on) {
+  const btn = document.getElementById('authBtn');
+  if (btn) { btn.disabled = on; btn.textContent = on ? '⏳ 请稍候…' : (btn.dataset.label || btn.textContent); }
+}
+
+function renderAuth(mode) {
+  // mode: 'login' 登录 | 'register' 注册（两遍密码校验）
   const overlay = document.getElementById('lockOverlay');
+  overlay.classList.remove('hidden');
+  const isLogin = mode === 'login';
   overlay.innerHTML = `
     <div class="lock-card">
       <div class="lock-logo">📅</div>
-      <div class="lock-title">${mode === 'setup' ? '设置应用密码' : '输入密码解锁'}</div>
-      <div class="lock-sub">${mode === 'setup' ? '首次使用请设置密码（至少 4 位）<br>需要输入两遍进行校验' : '本应用已设置密码保护'}</div>
-      <input type="password" id="lockPw1" class="lock-input" maxlength="32"
-             placeholder="${mode === 'setup' ? '设置密码' : '密码'}"
-             autocomplete="${mode === 'setup' ? 'new-password' : 'current-password'}">
-      ${mode === 'setup' ? '<input type="password" id="lockPw2" class="lock-input" maxlength="32" placeholder="再输入一遍确认" autocomplete="new-password">' : ''}
-      <div class="lock-err" id="lockErr"></div>
-      <button class="lock-btn" id="lockBtn">${mode === 'setup' ? '🔒 保存并进入' : '🔓 解锁'}</button>
-      ${mode === 'unlock' ? '<button class="lock-reset" id="lockReset">忘记密码？清除全部数据重置</button>' : ''}
+      <div class="auth-tabs">
+        <button class="auth-tab ${isLogin ? 'active' : ''}" id="tabLogin">登录</button>
+        <button class="auth-tab ${!isLogin ? 'active' : ''}" id="tabRegister">注册</button>
+      </div>
+      ${isLogin ? `
+      <input type="email" id="authEmail" class="lock-input" placeholder="邮箱" autocomplete="email" value="${localStorage.getItem(LAST_EMAIL_KEY) || ''}">
+      <input type="password" id="authPw" class="lock-input" maxlength="64" placeholder="密码" autocomplete="current-password">
+      ` : `
+      <input type="email" id="authEmail" class="lock-input" placeholder="邮箱" autocomplete="email">
+      <input type="password" id="authPw1" class="lock-input" maxlength="64" placeholder="设置密码（至少 6 位）" autocomplete="new-password">
+      <input type="password" id="authPw2" class="lock-input" maxlength="64" placeholder="再输入一遍确认" autocomplete="new-password">
+      `}
+      <div class="lock-err" id="authErr"></div>
+      <button class="lock-btn" id="authBtn" data-label="${isLogin ? '🔓 登录' : '🚀 注册并创建课表'}">${isLogin ? '🔓 登录' : '🚀 注册并创建课表'}</button>
+      ${isLogin ? '<button class="lock-reset" id="authForgot">忘记密码？发送重置邮件</button>' : ''}
     </div>`;
-  const submit = async () => {
-    const pw1 = document.getElementById('lockPw1').value;
-    if (mode === 'setup') {
-      const pw2 = document.getElementById('lockPw2').value;
-      if (pw1.length < 4) { lockErr('密码至少 4 位'); return; }
-      if (pw1 !== pw2) { lockErr('两次输入的密码不一致，请重新输入'); return; }
-      lockErr('');
-      localStorage.setItem(PW_HASH_KEY, await sha256Hex(pw1));
-      sessionStorage.setItem(PW_UNLOCK_KEY, '1');
-      hideLock();
-      showToast('✅ 密码已设置');
-    } else {
-      lockErr('');
-      const h = await sha256Hex(pw1);
-      if (h === localStorage.getItem(PW_HASH_KEY)) {
-        sessionStorage.setItem(PW_UNLOCK_KEY, '1');
-        hideLock();
-      } else {
-        lockErr('密码错误，请重试');
-        const inp = document.getElementById('lockPw1');
-        inp.value = ''; inp.focus();
-      }
-    }
-  };
-  document.getElementById('lockBtn').onclick = submit;
+  document.getElementById('tabLogin').onclick = () => renderAuth('login');
+  document.getElementById('tabRegister').onclick = () => renderAuth('register');
+  document.getElementById('authBtn').onclick = () => doAuth(mode);
   overlay.querySelectorAll('.lock-input').forEach((inp, idx, arr) => {
-    inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        if (mode === 'setup' && idx === 0 && arr.length > 1) document.getElementById('lockPw2').focus();
-        else submit();
-      }
-    });
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && idx === arr.length - 1) doAuth(mode); });
   });
-  const resetBtn = document.getElementById('lockReset');
-  if (resetBtn) resetBtn.onclick = () => {
-    if (!confirm('将清除全部数据（课程 / 日程 / 课件 / 密码），并重新设置密码。确定？')) return;
-    if (!confirm('再次确认：此操作不可恢复！')) return;
-    try { indexedDB.deleteDatabase('calendar_files_v1'); } catch (e) {}
-    localStorage.clear();
-    sessionStorage.clear();
-    location.reload();
+  const forgot = document.getElementById('authForgot');
+  if (forgot) forgot.onclick = async () => {
+    const email = (document.getElementById('authEmail').value || '').trim();
+    if (!email) { authErr('先填写邮箱，再点击发送重置邮件'); return; }
+    authErr(''); authBusy(true);
+    const { error } = await sb.auth.resetPasswordForEmail(email);
+    authBusy(false);
+    authErr(error ? '重置邮件发送失败：' + error.message : '✉️ 重置邮件已发送，请到邮箱查收');
   };
-  setTimeout(() => { const inp = document.getElementById('lockPw1'); if (inp) inp.focus(); }, 150);
+  setTimeout(() => { const inp = document.getElementById('authEmail'); if (inp) inp.focus(); }, 150);
 }
 
-// 启动判定（同步执行，避免应用内容闪现）
-(function initLock() {
-  const hash = localStorage.getItem(PW_HASH_KEY);
-  if (!hash) {
-    showLock();
-    renderLock('setup');   // 首次打开：要求设置密码
-  } else if (sessionStorage.getItem(PW_UNLOCK_KEY) !== '1') {
-    showLock();
-    renderLock('unlock');  // 新会话：要求解锁
+async function doAuth(mode) {
+  const email = (document.getElementById('authEmail').value || '').trim();
+  authErr('');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { authErr('请输入有效的邮箱地址'); return; }
+  if (mode === 'login') {
+    const pw = document.getElementById('authPw').value;
+    if (!pw) { authErr('请输入密码'); return; }
+    authBusy(true);
+    const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+    authBusy(false);
+    if (error) { authErr(error.message === 'Invalid login credentials' ? '邮箱或密码错误' : '登录失败：' + error.message); return; }
+    localStorage.setItem(LAST_EMAIL_KEY, email);
+    sessionStorage.setItem(UNLOCK_KEY, '1');
+    await enterApp();
+  } else {
+    const pw1 = document.getElementById('authPw1').value;
+    const pw2 = document.getElementById('authPw2').value;
+    if (pw1.length < 6) { authErr('密码至少 6 位'); return; }
+    if (pw1 !== pw2) { authErr('两次输入的密码不一致，请重新输入'); return; }
+    authBusy(true);
+    const { data, error } = await sb.auth.signUp({ email, password: pw1 });
+    authBusy(false);
+    if (error) { authErr('注册失败：' + error.message); return; }
+    if (!data.session) { authErr('✉️ 注册成功！请先到邮箱点击验证邮件，再回来登录'); return; }
+    localStorage.setItem(LAST_EMAIL_KEY, email);
+    sessionStorage.setItem(UNLOCK_KEY, '1');
+    await enterApp();
+  }
+}
+
+// 已有会话 → 每次新会话解锁（重新输密码验证）
+function renderUnlock() {
+  const overlay = document.getElementById('lockOverlay');
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <div class="lock-card">
+      <div class="lock-logo">📅</div>
+      <div class="lock-title">输入密码解锁</div>
+      <div class="lock-sub">${currentUser.email}</div>
+      <input type="password" id="authPw" class="lock-input" maxlength="64" placeholder="密码" autocomplete="current-password">
+      <div class="lock-err" id="authErr"></div>
+      <button class="lock-btn" id="authBtn" data-label="🔓 解锁">🔓 解锁</button>
+      <button class="lock-reset" id="authSwitch">退出登录，切换账号</button>
+    </div>`;
+  const submit = async () => {
+    const pw = document.getElementById('authPw').value;
+    if (!pw) { authErr('请输入密码'); return; }
+    authErr(''); authBusy(true);
+    const { error } = await sb.auth.signInWithPassword({ email: currentUser.email, password: pw });
+    authBusy(false);
+    if (error) {
+      authErr(error.message === 'Invalid login credentials' ? '密码错误，请重试' : '解锁失败：' + error.message);
+      document.getElementById('authPw').value = '';
+      return;
+    }
+    sessionStorage.setItem(UNLOCK_KEY, '1');
+    hideLock();
+    await loadAccountData();
+    updateAccountBar();
+  };
+  document.getElementById('authBtn').onclick = submit;
+  document.getElementById('authPw').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  document.getElementById('authSwitch').onclick = async () => {
+    await sb.auth.signOut();
+    currentUser = null;
+    sessionStorage.removeItem(UNLOCK_KEY);
+    renderAuth('login');
+  };
+  setTimeout(() => { const inp = document.getElementById('authPw'); if (inp) inp.focus(); }, 150);
+}
+
+async function enterApp() {
+  const { data } = await sb.auth.getSession();
+  const session = data && data.session;
+  if (!session) { renderAuth('login'); return; }
+  currentUser = { id: session.user.id, email: session.user.email };
+  hideLock();
+  updateAccountBar();
+  await loadAccountData();
+}
+
+async function loadAccountData() {
+  try {
+    const { data, error } = await sb.from('timetables').select('data,updated_at').eq('user_id', currentUser.id).maybeSingle();
+    if (error) { showToast('⚠️ 云端读取失败：' + error.message); return; }
+    const localSavedAt = Number(localStorage.getItem(LAST_SAVED_AT_KEY) || 0);
+    if (data && data.data && data.data.savedAt) {
+      if (data.data.savedAt > localSavedAt) {
+        // 云端较新 → 应用云端课表
+        events = data.data.events || [];
+        courses = data.data.courses || [];
+        localStorage.setItem(LAST_SAVED_AT_KEY, String(data.data.savedAt));
+        saveData();
+        renderCalendar(); renderEventsList(); renderSchedule();
+        showToast('⬇️ 已从云端同步课表');
+      } else if (localSavedAt > data.data.savedAt) {
+        scheduleCloudPush(true);   // 本机较新 → 推送到云端
+      }
+    } else {
+      // 云端为空 → 可将本机已有课表导入账户（拒绝过则不再询问）
+      const hasLocal = localStorage.getItem(STORAGE_KEY) !== null;
+      const isDefault = JSON.stringify({ events, courses }) === JSON.stringify({ events: [...DEFAULT_EVENTS], courses: [...DEFAULT_COURSES] });
+      const declineKey = 'calendar_import_declined_' + currentUser.id;
+      if (hasLocal && !isDefault && !localStorage.getItem(declineKey)) {
+        const ok = confirm('检测到本机有课表数据。\n\n是否导入到账户 ' + currentUser.email + '？\n（确定 = 导入并上传云端　取消 = 账户保持空白）');
+        if (ok) scheduleCloudPush(true);
+        else localStorage.setItem(declineKey, '1');
+      }
+    }
+  } catch (e) {
+    showToast('⚠️ 云端同步异常：' + (e.message || e));
+  }
+}
+
+function scheduleCloudPush(immediate) {
+  if (!sb || !currentUser) return;
+  clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(pushTimetableToCloud, immediate ? 0 : 900);
+}
+
+async function pushTimetableToCloud() {
+  if (!sb || !currentUser) return;
+  try {
+    const savedAt = Date.now();
+    localStorage.setItem(LAST_SAVED_AT_KEY, String(savedAt));
+    const { error } = await sb.from('timetables').upsert({
+      user_id: currentUser.id,
+      data: { events, courses, savedAt },
+      updated_at: new Date().toISOString()
+    });
+    if (error) { showToast('⚠️ 云端保存失败：' + error.message); return; }
+  } catch (e) {
+    showToast('⚠️ 云端保存异常：' + (e.message || e));
+  }
+}
+
+function updateAccountBar() {
+  const bar = document.getElementById('accountBar');
+  const btn = document.getElementById('logoutBtn');
+  if (bar) bar.textContent = currentUser ? '👤 ' + currentUser.email : (SUPABASE_READY ? '未登录' : '未启用账户（未配置 Supabase）');
+  if (btn) btn.style.display = (sb && currentUser) ? '' : 'none';
+}
+
+(async function initAccount() {
+  if (!SUPABASE_READY || !window.supabase) { sb = null; updateAccountBar(); return; }
+  try { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch (e) { sb = null; return; }
+  const lb = document.getElementById('logoutBtn');
+  if (lb) lb.onclick = async () => {
+    if (!confirm('退出当前账户？\n本机数据保留，但其他设备将看不到最新修改。')) return;
+    await sb.auth.signOut();
+    currentUser = null;
+    sessionStorage.removeItem(UNLOCK_KEY);
+    updateAccountBar();
+    renderAuth('login');
+  };
+  const { data } = await sb.auth.getSession();
+  const session = data && data.session;
+  if (!session) { renderAuth('login'); return; }
+  currentUser = { id: session.user.id, email: session.user.email };
+  if (sessionStorage.getItem(UNLOCK_KEY) === '1') {
+    hideLock();
+    updateAccountBar();
+    await loadAccountData();
+  } else {
+    renderUnlock();
   }
 })();
 
