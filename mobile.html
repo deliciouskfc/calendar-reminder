@@ -577,6 +577,22 @@
     position: absolute; right: 3px; top: 2px;
     font-size: 9px; line-height: 1; pointer-events: none;
   }
+  /* ===== 云同步条 ===== */
+  .cloud-bar {
+    margin-top: 12px; padding: 10px 12px;
+    background: #f4f7ff; border: 1px solid #e3e9fb; border-radius: 10px;
+  }
+  .cloud-info { font-size: 11px; color: #5a6b85; line-height: 1.7; }
+  .cloud-info.on { color: #2f7d4f; }
+  .cloud-btns { display: flex; gap: 8px; margin-top: 8px; }
+  .cloud-btn {
+    flex: 1; padding: 9px 6px;
+    border: none; border-radius: 8px;
+    background: #e6ebfa; color: #3d4f9e;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .cloud-btn.warn { background: #fdecea; color: #c0392b; }
+  .cloud-btn:active { filter: brightness(0.94); }
   /* ===== 星期多选 chips ===== */
   .weekday-chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .wd-chip {
@@ -1122,6 +1138,7 @@
     <input type="file" id="filePickInput" multiple style="display:none"
            accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.zip,.rar,.7z,image/*,audio/*,video/*">
     <div class="storage-info" id="storageInfo"></div>
+    <div class="cloud-bar" id="cloudBar"></div>
     <div class="modal-actions">
       <button class="btn btn-primary" id="fileCloseBtn">关闭</button>
     </div>
@@ -1132,8 +1149,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.4.2';
-const APP_VERSION_CODE = 10;
+const APP_VERSION = '1.5.0';
+const APP_VERSION_CODE = 11;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1153,6 +1170,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.5.0', date: '2026-09-08', items: [
+    '跨设备课件同步：用 GitHub 仓库当免费网盘，课件自动上传 / 下载',
+    '手机配置一次 Token 即可上传；iPad 等其他设备打开页面自动同步（无需配置）',
+    '课件弹窗内新增云同步面板：连接 GitHub / 立即同步 / 断开'
+  ]},
   { version: 'v1.4.2', date: '2026-09-08', items: [
     '课件按课程 section 共享关联：同一门课的所有周次时间段（如所有 CSC 1001-L02）都能看到同一份课件',
     '不同 section（如 CSC 1001-T04）互不混淆',
@@ -1419,12 +1441,178 @@ function fileRecordKey(f) {
   return c ? courseKey(c) : '';
 }
 
-// 删除课程后清理其附件（saveData 时自动执行）
+/* ================================================================
+   云端跨设备同步（GitHub 仓库作为存储，免费）
+   - cloud-files/{id}  文件二进制；cloud-files/manifest.json  清单
+   - 配置 Token 的设备：上传/删除（Contents 读写权限）
+   - 其他设备：从 raw.githubusercontent.com 免登录自动下载
+================================================================ */
+const CLOUD_REPO = 'deliciouskfc/calendar-reminder';
+const CLOUD_DIR = 'cloud-files';
+const GH_TOKEN_KEY = 'calendar_gh_token';
+let cloudManifest = null;
+let cloudSyncing = false;
+
+function ghToken() { return localStorage.getItem(GH_TOKEN_KEY) || ''; }
+function ghHeaders(tok) { return { 'Authorization': 'Bearer ' + (tok || ghToken()), 'Accept': 'application/vnd.github+json' }; }
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+async function fetchCloudManifest() {
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/${CLOUD_REPO}/main/${CLOUD_DIR}/manifest.json?t=` + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) { return null; }
+}
+async function ensureCloudManifest() {
+  if (!cloudManifest) cloudManifest = await fetchCloudManifest() || { files: [] };
+  return cloudManifest;
+}
+async function writeCloudManifest(entries) {
+  const url = `https://api.github.com/repos/${CLOUD_REPO}/contents/${CLOUD_DIR}/manifest.json`;
+  const res0 = await fetch(url, { headers: ghHeaders() });
+  let sha = null;
+  if (res0.ok) sha = (await res0.json()).sha;
+  const bytes = new TextEncoder().encode(JSON.stringify({ files: entries }));
+  let bin = ''; bytes.forEach(b => bin += String.fromCharCode(b));
+  const body = { message: 'chore: update cloud manifest', branch: 'main', content: btoa(bin) };
+  if (sha) body.sha = sha;
+  const res = await fetch(url, { method: 'PUT', headers: { ...ghHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error('写清单失败 ' + res.status);
+}
+async function putCloudFile(id, b64) {
+  const res = await fetch(`https://api.github.com/repos/${CLOUD_REPO}/contents/${CLOUD_DIR}/${id}`, {
+    method: 'PUT',
+    headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'chore: upload courseware ' + id, branch: 'main', content: b64 })
+  });
+  if (!res.ok) throw new Error('上传失败 ' + res.status);
+}
+async function deleteCloudFile(id) {
+  const url = `https://api.github.com/repos/${CLOUD_REPO}/contents/${CLOUD_DIR}/${id}`;
+  const res0 = await fetch(url, { headers: ghHeaders() });
+  if (res0.status === 404) return;
+  if (!res0.ok) throw new Error('删除失败 ' + res0.status);
+  const j = await res0.json();
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'chore: delete courseware ' + id, branch: 'main', sha: j.sha })
+  });
+  if (!res.ok) throw new Error('删除失败 ' + res.status);
+}
+// 把本地未上云的文件全部上传
+async function uploadPendingToCloud() {
+  if (!ghToken() || cloudSyncing) return;
+  const files = await dbGetAllFiles();
+  const mf = await ensureCloudManifest();
+  const known = new Set((mf.files || []).map(f => f.id));
+  const pending = files.filter(f => !known.has(f.id));
+  if (!pending.length) return;
+  cloudSyncing = true;
+  try {
+    showToast(`☁️ 正在上传 ${pending.length} 个文件…`);
+    for (const f of pending) {
+      await putCloudFile(f.id, await blobToBase64(f.blob));
+      mf.files.push({ id: f.id, fileKey: fileRecordKey(f), name: f.name, type: f.type, size: f.size, uploadedAt: Date.now() });
+    }
+    await writeCloudManifest(mf.files);
+    showToast('✅ 已同步到云端，其他设备可下载');
+  } finally { cloudSyncing = false; }
+}
+// 从云端下载本机没有的文件（无需 Token）
+async function syncFromCloud() {
+  if (cloudSyncing) return { downloaded: 0, total: 0 };
+  cloudSyncing = true;
+  try {
+    const mf = await fetchCloudManifest();
+    cloudManifest = mf;
+    if (!mf || !Array.isArray(mf.files)) return { downloaded: 0, total: 0 };
+    const local = await dbGetAllFiles();
+    const have = new Set(local.map(f => f.id));
+    const missing = mf.files.filter(f => !have.has(f.id));
+    if (!missing.length) return { downloaded: 0, total: mf.files.length };
+    let ok = 0;
+    for (const m of missing) {
+      try {
+        const res = await fetch(`https://raw.githubusercontent.com/${CLOUD_REPO}/main/${CLOUD_DIR}/${m.id}?t=` + Date.now(), { cache: 'no-store' });
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        await dbAddFiles([{
+          id: m.id, courseId: '', fileKey: m.fileKey || '',
+          name: m.name, type: m.type || '', size: m.size,
+          blob, addedAt: m.uploadedAt || Date.now(), cloud: true
+        }]);
+        ok++;
+      } catch (e) { /* 单个失败跳过 */ }
+    }
+    if (ok) { attachCountsDirty = true; renderSchedule(); if (fileSheetCourse) await renderFileList(); }
+    return { downloaded: ok, total: mf.files.length };
+  } finally { cloudSyncing = false; }
+}
+// 连接 / 断开 GitHub Token
+async function connectCloud() {
+  const t = prompt('粘贴 GitHub Token（对 calendar-reminder 仓库有 Contents 读写权限）：\n\n生成方法：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token → 仓库选 calendar-reminder → Permissions 里 Contents 选 Read and write');
+  if (t === null) return;
+  if (!t.trim()) { localStorage.removeItem(GH_TOKEN_KEY); showToast('已断开云同步'); renderCloudBar(); return; }
+  try {
+    const res = await fetch(`https://api.github.com/repos/${CLOUD_REPO}`, { headers: ghHeaders(t.trim()) });
+    if (!res.ok) {
+      showToast(res.status === 401 ? '❌ Token 无效' : (res.status === 403 ? '❌ Token 无仓库 Contents 权限' : '❌ 验证失败（' + res.status + '）'));
+      return;
+    }
+    localStorage.setItem(GH_TOKEN_KEY, t.trim());
+    showToast('✅ 已连接云同步');
+    renderCloudBar();
+    uploadPendingToCloud().catch(e => showToast('⚠️ ' + e.message));
+  } catch (e) { showToast('⚠️ 验证失败，请检查网络'); }
+}
+function renderCloudBar() {
+  const bar = document.getElementById('cloudBar');
+  if (!bar) return;
+  if (ghToken()) {
+    bar.innerHTML = `
+      <div class="cloud-info on">☁️ 已连接 GitHub · 添加的课件自动上传，其他设备打开本页自动下载</div>
+      <div class="cloud-btns">
+        <button class="cloud-btn" data-act="sync">⬇️ 立即同步</button>
+        <button class="cloud-btn warn" data-act="disconnect">断开</button>
+      </div>`;
+  } else {
+    bar.innerHTML = `
+      <div class="cloud-info">☁️ 跨设备同步未开启 · 连接后在任意设备添加的课件，手机 / iPad 自动同步</div>
+      <div class="cloud-btns">
+        <button class="cloud-btn" data-act="connect">连接 GitHub</button>
+        <button class="cloud-btn" data-act="sync">⬇️ 同步</button>
+      </div>`;
+  }
+  bar.querySelectorAll('.cloud-btn').forEach(b => b.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    const act = ev.currentTarget.dataset.act;
+    if (act === 'connect') { connectCloud(); return; }
+    if (act === 'disconnect') { localStorage.removeItem(GH_TOKEN_KEY); showToast('已断开云同步'); renderCloudBar(); return; }
+    if (act === 'sync') {
+      showToast('☁️ 正在同步…');
+      try {
+        const r = await syncFromCloud();
+        showToast(r.downloaded ? `⬇️ 已下载 ${r.downloaded} 个课件` : (r.total ? '✅ 云端课件已最新' : '☁️ 云端暂无课件'));
+        if (fileSheetCourse) await renderFileList();
+      } catch (e) { showToast('⚠️ 同步失败，请检查网络'); }
+    }
+  }));
+}
+
+// 删除课程后清理其附件（saveData 时自动执行；云端下载的文件不清理，以免与云端反复拉扯）
 async function pruneOrphanFiles() {
   try {
     const keys = new Set(courses.map(courseKey));
     const files = await dbGetAllFiles();
-    const dead = files.filter(f => !keys.has(fileRecordKey(f)));
+    const dead = files.filter(f => !f.cloud && !keys.has(fileRecordKey(f)));
     for (const f of dead) await dbDeleteFile(f.id);
     if (dead.length) attachCountsDirty = true;
   } catch (e) { /* IndexedDB 不可用时忽略 */ }
@@ -1495,11 +1683,22 @@ async function renderFileList() {
     listEl.querySelectorAll('.file-del').forEach(btn => {
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
-        if (!confirm('删除该课件文件？')) return;
+        if (!confirm('删除该课件文件？（已上云的会在所有设备删除）')) return;
         await dbDeleteFile(btn.dataset.del);
         attachCountsDirty = true;
         renderSchedule();
         await renderFileList();
+        // 云端同步删除
+        if (ghToken()) {
+          try {
+            await deleteCloudFile(btn.dataset.del);
+            const mf = await ensureCloudManifest();
+            mf.files = (mf.files || []).filter(x => x.id !== btn.dataset.del);
+            await writeCloudManifest(mf.files);
+          } catch (e) { showToast('⚠️ 云端删除失败：' + e.message); }
+        } else if (cloudManifest && (cloudManifest.files || []).some(x => x.id === btn.dataset.del)) {
+          showToast('⚠️ 已从本机删除（未连接云端，其他设备仍会同步此文件）');
+        }
       });
     });
   }
@@ -1510,6 +1709,7 @@ async function renderFileList() {
   } else {
     infoEl.textContent = '';
   }
+  renderCloudBar();
 }
 
 function openFileBlob(rec) {
@@ -1543,6 +1743,8 @@ filePickInput.addEventListener('change', async () => {
   attachCountsDirty = true;
   renderSchedule();
   await renderFileList();
+  // 已连接云同步 → 自动上传
+  if (ghToken()) uploadPendingToCloud().catch(e => showToast('⚠️ 云端上传失败：' + e.message));
 });
 document.getElementById('fileCloseBtn').addEventListener('click', () => {
   document.getElementById('fileOverlay').classList.remove('active');
@@ -2701,6 +2903,10 @@ renderSchedule();
 updateReminderStatus();
 setInterval(checkReminders, 15000);
 checkReminders();
+// 启动时后台同步云端课件（无需 Token）
+syncFromCloud().then(r => {
+  if (r && r.downloaded) showToast('⬇️ 已从云端同步 ' + r.downloaded + ' 个课件');
+}).catch(() => {});
 
 /* ================================================================
    开屏动画隐藏（三重保险：DOMContentLoaded / load / 兜底超时）

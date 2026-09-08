@@ -1,7 +1,7 @@
 {
-  "version": "1.4.2",
-  "versionCode": 10,
+  "version": "1.5.0",
+  "versionCode": 11,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "课件按课程 section 共享：同一门课所有时间段共享同一份课件\n不同 section（如 L02 与 T04）互不混淆\n美化「检查更新」按钮",
+  "updateLog": "跨设备课件同步：GitHub 仓库当免费网盘\n手机配置一次 Token 即可上传，其他设备打开自动下载\n课件弹窗内可连接 GitHub / 立即同步 / 断开",
   "forceUpdate": false
 }
