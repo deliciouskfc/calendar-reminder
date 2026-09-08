@@ -578,6 +578,18 @@
   .btn-tool.danger:hover { background: #fdf0ef; border-color: #e74c3c; }
   .tt-select { padding: 5px 8px; font-size: 12px; border: 1px solid #dfe2eb; border-radius: 8px; background: #fff; color: #2c3550; max-width: 160px; }
   .tt-select:focus { outline: none; border-color: #6a5acd; }
+  /* 校历设置弹窗 */
+  .cal-settings-modal { max-width: 420px; }
+  .cal-settings-modal .modal-body { max-height: 70vh; overflow-y: auto; }
+  .cal-settings-modal h4 { margin: 0 0 8px; font-size: 14px; color: #2c3550; }
+  .holiday-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .holiday-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #f8f9fc; border-radius: 8px; border: 1px solid #e8eaf2; }
+  .holiday-item .holiday-name { flex: 1; font-size: 13px; font-weight: 600; color: #2c3550; }
+  .holiday-item .holiday-dates { font-size: 12px; color: #888; }
+  .holiday-item .holiday-del { background: none; border: none; color: #e74c3c; cursor: pointer; font-size: 16px; padding: 0 4px; }
+  .holiday-form { display: flex; gap: 6px; flex-wrap: wrap; }
+  .holiday-form input { flex: 1; min-width: 80px; padding: 7px 8px; font-size: 13px; border: 1px solid #dfe2eb; border-radius: 8px; }
+  .holiday-form input:focus { outline: none; border-color: #6a5acd; }
   /* ===== 退课列表 ===== */
   .drop-list { max-height: 46vh; overflow-y: auto; }
   .drop-item {
@@ -967,6 +979,7 @@
           <button class="btn-tool" id="undoBtn" style="display:none;">↩ 撤销</button>
           <button class="btn-tool danger" id="clearCoursesBtn">🗑 退课</button>
           <button class="btn-tool" id="restoreCoursesBtn">➕ 加课</button>
+          <button class="btn-tool" id="calSettingsBtn" title="校历设置" style="display:none;">📅</button>
           <button class="btn-tool" id="logoutBtn2" title="退出登录" style="display:none;">⏻</button>
         </div>
         <div class="schedule-nav">
@@ -1139,8 +1152,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.1.1';
-const APP_VERSION_CODE = 22;
+const APP_VERSION = '2.2.0';
+const APP_VERSION_CODE = 23;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1174,6 +1187,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.2.0', date: '2026-09-08', items: [
+    '校历（节假日）移至云端，每个账户可自定义',
+    '新增校历设置弹窗：添加/删除节假日，重置为默认',
+    '新用户首次登录自动初始化默认校历到云端'
+  ]},
   { version: 'v2.1.1', date: '2026-09-08', items: [
     '新注册账户打开即空白课表，不再预置 CSC/ECO 默认数据',
     '清理测试账户数据，仅保留主人账户'
@@ -1277,7 +1295,7 @@ const DEFAULT_COURSES = [
    CUHK 2026-27 校历数据
 ================================================================ */
 // 教学学期
-const SEMESTERS = [
+let SEMESTERS = [
   { name: '第一学期', start: '2026-09-07', end: '2026-12-18' },
   { name: '独立探索期', start: '2026-12-28', end: '2027-01-10', type: 'independent' },
   { name: '第二学期', start: '2027-01-11', end: '2027-05-14' },
@@ -1285,14 +1303,14 @@ const SEMESTERS = [
 ];
 
 // 考试期
-const EXAM_PERIODS = [
+let EXAM_PERIODS = [
   { name: '第一学期考试', start: '2026-12-20', end: '2026-12-27' },
   { name: '第二学期考试', start: '2027-05-15', end: '2027-05-22' },
   { name: '暑期课程考试', start: '2027-07-19', end: '2027-07-21' }
 ];
 
 // 节假日（公众假期 + 农历新年）
-const HOLIDAYS = [
+let HOLIDAYS = [
   { start: '2026-09-25', end: '2026-09-27', name: '中秋节' },
   { start: '2026-10-01', end: '2026-10-07', name: '国庆节' },
   { start: '2027-01-25', end: '2027-02-14', name: '农历新年' },
@@ -1302,9 +1320,17 @@ const HOLIDAYS = [
 ];
 
 // 补课日（这天按星期五的课表上课）
-const MAKEUP_DAYS = [
+let MAKEUP_DAYS = [
   { date: '2026-09-20', weekdayAs: 5, name: '补课(周五)' }
 ];
+
+// 默认校历（用于新用户初始化和重置）
+const DEFAULT_CALENDAR = {
+  semesters: JSON.parse(JSON.stringify(SEMESTERS)),
+  examPeriods: JSON.parse(JSON.stringify(EXAM_PERIODS)),
+  holidays: JSON.parse(JSON.stringify(HOLIDAYS)),
+  makeupDays: JSON.parse(JSON.stringify(MAKEUP_DAYS))
+};
 
 /* ================================================================
    校历辅助函数
@@ -2653,6 +2679,117 @@ function renderUnlock() {
   setTimeout(() => { const inp = document.getElementById('authPw'); if (inp) inp.focus(); }, 150);
 }
 
+async function loadCalendarFromCloud() {
+  if (!sb || !currentUser) return;
+  try {
+    const { data, error } = await sb.from('user_settings').select('calendar').eq('user_id', currentUser.id).maybeSingle();
+    if (error) { console.warn('校历云端读取失败', error.message); return; }
+    if (data && data.calendar && data.calendar.holidays) {
+      SEMESTERS = data.calendar.semesters || DEFAULT_CALENDAR.semesters;
+      EXAM_PERIODS = data.calendar.examPeriods || DEFAULT_CALENDAR.examPeriods;
+      HOLIDAYS = data.calendar.holidays || DEFAULT_CALENDAR.holidays;
+      MAKEUP_DAYS = data.calendar.makeupDays || DEFAULT_CALENDAR.makeupDays;
+    } else {
+      await saveCalendarToCloud();
+    }
+  } catch(e) { console.warn('校历同步异常', e); }
+}
+
+async function saveCalendarToCloud() {
+  if (!sb || !currentUser) return;
+  try {
+    const cal = { semesters: SEMESTERS, examPeriods: EXAM_PERIODS, holidays: HOLIDAYS, makeupDays: MAKEUP_DAYS };
+    const { error } = await sb.from('user_settings').upsert({
+      user_id: currentUser.id, calendar: cal, updated_at: new Date().toISOString()
+    });
+    if (error) console.warn('校历保存失败', error.message);
+  } catch(e) { console.warn('校历保存异常', e); }
+}
+
+function openCalendarSettings() {
+  const old = document.getElementById('calSettingsModal');
+  if (old) old.remove();
+  const modal = document.createElement('div');
+  modal.id = 'calSettingsModal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal cal-settings-modal">
+      <div class="modal-header">
+        <h3>📅 校历设置</h3>
+        <button class="close-btn" id="calSettingsClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="cal-section">
+          <h4>🌴 节假日</h4>
+          <div class="holiday-list" id="holidayList"></div>
+          <div class="holiday-form">
+            <input type="text" id="newHolidayName" placeholder="名称（如：元旦）" />
+            <input type="date" id="newHolidayStart" />
+            <input type="date" id="newHolidayEnd" />
+            <button class="btn-tool" id="addHolidayBtn">＋ 添加</button>
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <button class="btn-tool danger" id="resetCalendarBtn">↺ 重置为默认校历</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  renderHolidayList();
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('calSettingsClose').onclick = () => modal.remove();
+  document.getElementById('addHolidayBtn').onclick = async () => {
+    const name = document.getElementById('newHolidayName').value.trim();
+    const start = document.getElementById('newHolidayStart').value;
+    const end = document.getElementById('newHolidayEnd').value || start;
+    if (!name || !start) { showToast('请填写名称和开始日期'); return; }
+    HOLIDAYS.push({ name, start, end });
+    HOLIDAYS.sort((a,b) => (a.start||'').localeCompare(b.start||''));
+    renderHolidayList();
+    document.getElementById('newHolidayName').value = '';
+    document.getElementById('newHolidayStart').value = '';
+    document.getElementById('newHolidayEnd').value = '';
+    await saveCalendarToCloud();
+    renderCalendar();
+    showToast('✅ 已添加节假日');
+  };
+  document.getElementById('resetCalendarBtn').onclick = async () => {
+    if (!confirm('重置为默认校历？所有自定义节假日将丢失。')) return;
+    SEMESTERS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.semesters));
+    EXAM_PERIODS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.examPeriods));
+    HOLIDAYS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.holidays));
+    MAKEUP_DAYS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.makeupDays));
+    renderHolidayList();
+    await saveCalendarToCloud();
+    renderCalendar();
+    showToast('✅ 已重置为默认校历');
+  };
+}
+
+function renderHolidayList() {
+  const list = document.getElementById('holidayList');
+  if (!list) return;
+  if (HOLIDAYS.length === 0) { list.innerHTML = '<div style="color:#999;font-size:13px;">暂无节假日</div>'; return; }
+  list.innerHTML = HOLIDAYS.map((h, i) => `
+    <div class="holiday-item">
+      <span class="holiday-name">${escapeHtml(h.name)}</span>
+      <span class="holiday-dates">${h.start}${h.end !== h.start ? ' ~ ' + h.end : ''}</span>
+      <button class="holiday-del" data-i="${i}">✕</button>
+    </div>
+  `).join('');
+  list.querySelectorAll('.holiday-del').forEach(btn => {
+    btn.onclick = async () => {
+      const i = +btn.dataset.i;
+      HOLIDAYS.splice(i, 1);
+      renderHolidayList();
+      await saveCalendarToCloud();
+      renderCalendar();
+      showToast('🗑 已删除');
+    };
+  });
+}
+
 async function enterApp() {
   const { data } = await sb.auth.getSession();
   const session = data && data.session;
@@ -2660,6 +2797,7 @@ async function enterApp() {
   currentUser = { id: session.user.id, email: session.user.email };
   hideLock();
   updateAccountBar();
+  await loadCalendarFromCloud();
   await loadAccountData();
 }
 
@@ -2767,7 +2905,7 @@ async function renameTimetable(id) {
 function renderTimetableSwitcher() {
   const sel = document.getElementById('ttSelect');
   const show = sb && currentUser && timetables.length > 0;
-  ['ttSelect','ttNewBtn','ttRenameBtn','ttDeleteBtn','logoutBtn2'].forEach(id => {
+  ['ttSelect','ttNewBtn','ttRenameBtn','ttDeleteBtn','logoutBtn2','calSettingsBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = show ? '' : 'none';
   });
@@ -2841,6 +2979,8 @@ function doLogout() {
   if (rnBtn) rnBtn.onclick = () => { if (activeTimetableId) renameTimetable(activeTimetableId); };
   const delBtn = document.getElementById('ttDeleteBtn');
   if (delBtn) delBtn.onclick = () => { if (activeTimetableId) deleteTimetable(activeTimetableId); };
+  const calBtn = document.getElementById('calSettingsBtn');
+  if (calBtn) calBtn.onclick = () => openCalendarSettings();
   const { data } = await sb.auth.getSession();
   const session = data && data.session;
   if (!session) { renderAuth('login'); return; }
@@ -2848,6 +2988,7 @@ function doLogout() {
   if (sessionStorage.getItem(UNLOCK_KEY) === '1') {
     hideLock();
     updateAccountBar();
+    await loadCalendarFromCloud();
     await loadAccountData();
   } else {
     renderUnlock();
