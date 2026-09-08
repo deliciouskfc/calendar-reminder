@@ -534,6 +534,26 @@
   /* 课表切换下拉 */
   .tt-select { flex: 0 1 130px; padding: 7px 8px; font-size: 12px; border: 1px solid #dfe2eb; border-radius: 8px; background: #fff; color: #2c3550; max-width: 130px; }
   .tt-select:focus { outline: none; border-color: #6a5acd; }
+  /* 更多菜单（折叠式） */
+  .more-menu-wrap { position: relative; display: inline-block; }
+  .more-dropdown {
+    position: absolute; top: calc(100% + 4px); right: 0; z-index: 200;
+    background: #fff; border: 1px solid #e0e3ec; border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15); min-width: 180px; padding: 6px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .more-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; }
+  .more-row label { font-size: 13px; color: #2c3550; white-space: nowrap; }
+  .more-row .tt-select { flex: 1; min-width: 0; padding: 5px 6px; font-size: 13px; }
+  .more-item {
+    background: none; border: none; text-align: left; padding: 8px 10px;
+    font-size: 14px; color: #2c3550; border-radius: 7px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .more-item:hover { background: #f0f2fa; }
+  .more-item.danger { color: #e74c3c; }
+  .more-item.danger:hover { background: #fdecea; }
+  .more-sep { height: 1px; background: #e8eaf2; margin: 4px 0; }
   /* 校历设置弹窗 */
   .cal-settings-modal { max-width: 420px; }
   .cal-settings-modal .modal-body { max-height: 70vh; overflow-y: auto; }
@@ -1031,17 +1051,27 @@
       <div class="schedule-header">
         <div class="schedule-title">📚 每周课程表</div>
         <div class="schedule-tools">
-          <select class="tt-select" id="ttSelect" title="切换课表" style="display:none;"></select>
-          <button class="btn-tool" id="ttNewBtn" title="新建课表" style="display:none;">＋</button>
-          <button class="btn-tool" id="ttRenameBtn" title="重命名当前课表" style="display:none;">✏️</button>
-          <button class="btn-tool danger" id="ttDeleteBtn" title="删除当前课表" style="display:none;">🗑</button>
-          <button class="btn-tool" id="undoBtn" style="display:none;">↩ 撤销</button>
           <button class="btn-tool danger" id="clearCoursesBtn">🗑 退课</button>
           <button class="btn-tool" id="restoreCoursesBtn">➕ 加课</button>
           <button class="btn-tool cloud-sync" id="cloudSyncBtn"><span class="cs-ic">☁️</span> 云同步</button>
-          <button class="btn-tool" id="calSettingsBtn" title="校历设置" style="display:none;">📅</button>
-          <button class="btn-tool" id="tutorialBtn" title="使用教程">❓</button>
-          <button class="btn-tool" id="logoutBtn2" title="退出登录" style="display:none;">⏻</button>
+          <button class="btn-tool" id="undoBtn" style="display:none;">↩ 撤销</button>
+          <div class="more-menu-wrap" id="moreMenuWrap">
+            <button class="btn-tool" id="moreMenuBtn">☰ 更多 ▾</button>
+            <div class="more-dropdown" id="moreDropdown" style="display:none;">
+              <div class="more-row" id="moreTTRow" style="display:none;">
+                <label>📚 课表：</label>
+                <select class="tt-select" id="ttSelect"></select>
+              </div>
+              <button class="more-item" id="ttNewBtn" style="display:none;">➕ 新建课表</button>
+              <button class="more-item" id="ttRenameBtn" style="display:none;">✏️ 重命名课表</button>
+              <button class="more-item danger" id="ttDeleteBtn" style="display:none;">🗑 删除课表</button>
+              <div class="more-sep"></div>
+              <button class="more-item" id="calSettingsBtn" style="display:none;">📅 校历设置</button>
+              <button class="more-item" id="tutorialBtn">❓ 使用教程</button>
+              <div class="more-sep"></div>
+              <button class="more-item danger" id="logoutBtn2" style="display:none;">⏻ 退出登录</button>
+            </div>
+          </div>
         </div>
         <div class="schedule-nav">
           <button class="nav-btn" id="schPrevBtn">‹</button>
@@ -1229,8 +1259,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.3.0';
-const APP_VERSION_CODE = 26;
+const APP_VERSION = '2.3.1';
+const APP_VERSION_CODE = 27;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -3519,13 +3549,34 @@ async function renameTimetable(id) {
 function renderTimetableSwitcher() {
   const sel = document.getElementById('ttSelect');
   const show = sb && currentUser && timetables.length > 0;
-  ['ttSelect','ttNewBtn','ttRenameBtn','ttDeleteBtn','logoutBtn2','calSettingsBtn'].forEach(id => {
+  ['moreTTRow','ttNewBtn','ttRenameBtn','ttDeleteBtn','logoutBtn2','calSettingsBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = show ? '' : 'none';
   });
   if (sel && show) {
     sel.innerHTML = timetables.map(t => `<option value="${t.id}" ${t.id===activeTimetableId?'selected':''}>${escapeHtml(t.name)}</option>`).join('');
   }
+}
+
+// 更多菜单折叠
+function setupMoreMenu() {
+  const btn = document.getElementById('moreMenuBtn');
+  const dd = document.getElementById('moreDropdown');
+  if (!btn || !dd) return;
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const open = dd.style.display !== 'none';
+    dd.style.display = open ? 'none' : 'flex';
+  };
+  document.addEventListener('click', (e) => {
+    if (!document.getElementById('moreMenuWrap').contains(e.target)) {
+      dd.style.display = 'none';
+    }
+  });
+  // 点击菜单项后自动收起
+  dd.querySelectorAll('.more-item').forEach(item => {
+    item.addEventListener('click', () => { dd.style.display = 'none'; });
+  });
 }
 
 function scheduleCloudPush(immediate) {
@@ -3620,6 +3671,7 @@ function doLogout() {
   if (calBtn) calBtn.onclick = () => openCalendarSettings();
   const tutBtn = document.getElementById('tutorialBtn');
   if (tutBtn) tutBtn.onclick = () => openTutorial();
+  setupMoreMenu();
   const { data } = await sb.auth.getSession();
   const session = data && data.session;
   if (!session) { renderAuth('login'); return; }
