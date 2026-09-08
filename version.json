@@ -1,7 +1,7 @@
 {
-  "version": "2.6.1",
-  "versionCode": 35,
+  "version": "2.6.2",
+  "versionCode": 36,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "发送气泡点下瞬间立即显示；留言板打开期间 1 秒轮询",
+  "updateLog": "修复发送后气泡消失的问题：纯写入模式，失败也不丢气泡",
   "forceUpdate": false
 }

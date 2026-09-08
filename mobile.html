@@ -1263,8 +1263,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.6.1';
-const APP_VERSION_CODE = 35;
+const APP_VERSION = '2.6.2';
+const APP_VERSION_CODE = 36;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1298,6 +1298,9 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.6.2', date: '2026-09-08', items: [
+    '修复发送后气泡短暂显示又消失的问题：改用纯写入模式，写库失败时气泡也不消失'
+  ]},
   { version: 'v2.6.1', date: '2026-09-08', items: [
     '发送的气泡在点下瞬间立即显示（不等网络请求），后台写库后自动替换为正式记录',
     '留言板打开期间轮询加快到 1 秒，关闭后自动降回 10 秒'
@@ -4062,17 +4065,15 @@ async function sendMsg() {
   inp.value = '';
   if (msgThreadPeer && document.getElementById('msgThreadView').style.display !== 'none') showMsgThread();
   try {
-    // ② 后台写库，完成后用服务器记录替换本地临时气泡
-    const { data: inserted, error } = await sb.from('messages').insert(row).select().single();
-    msgCache = msgCache.filter(m => m.id !== tempId);
-    if (inserted && !msgCache.some(m => m.id === inserted.id)) {
-      msgCache.push(inserted);
-      msgCache.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+    // ② 后台写库（纯写入模式，不依赖服务器返回；本地气泡保留，由轮询自动对齐）
+    const { error } = await sb.from('messages').insert(row);
+    if (!error) {
+      showToast('✅ 已发送');
+    } else {
+      showToast('⚠️ 发送失败：' + error.message);
     }
     updateMsgBadge();
     if (msgThreadPeer && document.getElementById('msgThreadView').style.display !== 'none') showMsgThread();
-    if (error) { showToast('⚠️ 发送失败：' + error.message); return; }
-    showToast('✅ 已发送');
   } catch (e) {
     showToast('⚠️ 发送异常：' + (e.message || e));
   } finally {
