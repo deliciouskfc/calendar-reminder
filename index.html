@@ -604,6 +604,36 @@
   }
   .cl-date { font-size: 11px; color: #95a5a6; margin-left: auto; }
   .cl-ver ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: #2c3e50; line-height: 1.9; }
+  /* ===== Outlook 邮箱 Widget ===== */
+  .mail-widget {
+    background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+    color: #fff; border-radius: 12px; padding: 14px 16px;
+    margin-bottom: 12px; position: relative; overflow: hidden;
+    cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .mail-widget:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,120,212,0.35); }
+  .mail-widget.logged-out {
+    background: linear-gradient(135deg, #606872 0%, #4a515b 100%);
+    cursor: pointer;
+  }
+  .mail-row { display: flex; align-items: center; gap: 10px; }
+  .mail-icon { font-size: 22px; flex-shrink: 0; }
+  .mail-info { flex: 1; min-width: 0; }
+  .mail-label { font-size: 12px; opacity: 0.85; }
+  .mail-count {
+    font-size: 26px; font-weight: 700; line-height: 1.1;
+  }
+  .mail-count small { font-size: 13px; font-weight: 400; opacity: 0.8; }
+  .mail-account { font-size: 11px; opacity: 0.7; margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mail-refresh {
+    position: absolute; top: 8px; right: 10px; font-size: 14px;
+    opacity: 0.6; cursor: pointer; padding: 4px; border-radius: 4px;
+    transition: opacity 0.15s;
+  }
+  .mail-refresh:hover { opacity: 1; }
+  .mail-refresh.spinning { animation: spin 0.8s linear infinite; }
+  @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
   .tt-course .cc-code {
     font-weight: 700;
     font-size: 11.5px;
@@ -825,6 +855,7 @@
     .splash-sub { font-size: 12px; }
   }
 </style>
+<script src="https://alcdn.msauth.net/lib/1.2.0/js/msal.js"></script>
 </head>
 <body>
 <!-- 开屏动画 -->
@@ -874,6 +905,18 @@
 
     <div class="events-section">
       <h2>📋 当日事项</h2>
+      <!-- Outlook 邮箱 Widget -->
+      <div class="mail-widget logged-out" id="mailWidget">
+        <div class="mail-refresh" id="mailRefreshBtn" style="display:none;">🔄</div>
+        <div class="mail-row">
+          <div class="mail-icon">📧</div>
+          <div class="mail-info">
+            <div class="mail-label" id="mailLabel">关联 Outlook 邮箱</div>
+            <div class="mail-count" id="mailCount">点击绑定</div>
+            <div class="mail-account" id="mailAccount"></div>
+          </div>
+        </div>
+      </div>
       <div class="selected-date-label" id="selectedDateLabel"></div>
       <button class="jump-schedule-btn" id="jumpScheduleBtn">📚 查看本周课表 →</button>
       <div class="events-list" id="eventsList"></div>
@@ -1056,8 +1099,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.3.2';
-const APP_VERSION_CODE = 7;
+const APP_VERSION = '1.4.0';
+const APP_VERSION_CODE = 8;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1077,6 +1120,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.4.0', date: '2026-09-08', items: [
+    '新增 Outlook 邮箱关联，绑定后显示未读邮件数，点击跳转 Outlook 收件箱',
+    '每 5 分钟自动刷新未读数，支持手动刷新'
+  ]},
   { version: 'v1.3.2', date: '2026-09-08', items: [
     '加课表单星期改为多选 chips，一次添加一周多天的课程'
   ]},
@@ -1948,6 +1995,145 @@ function showToast(msg) {
     setTimeout(() => t.remove(), 300);
   }, 2200);
 }
+
+/* ================================================================
+   Outlook 邮箱集成（MSAL.js + Microsoft Graph API）
+   - 弹窗登录 Outlook，获取 token
+   - 调用 Graph API 获取未读邮件数
+   - token 存 localStorage，刷新页面后自动静默续期
+================================================================ */
+const OUTLOOK_CLIENT_ID = ''; // ← 填入 Azure 应用 Client ID 后生效
+const OUTLOOK_REDIRECT_URI = location.origin + location.pathname.replace(/[^/]*$/, '') + 'index.html';
+let msalApp = null;
+let mailAccount = null;
+
+function initOutlook() {
+  if (!window.Msal || !OUTLOOK_CLIENT_ID) {
+    renderMailWidget({ connected: false, reason: 'no-config' });
+    return;
+  }
+  msalApp = new Msal.UserAgentApplication({
+    auth: {
+      clientId: OUTLOOK_CLIENT_ID,
+      authority: 'https://login.microsoftonline.com/common',
+      redirectUri: OUTLOOK_REDIRECT_URI
+    },
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
+  });
+
+  // 处理回调
+  if (msalApp.getAccount()) {
+    mailAccount = msalApp.getAccount();
+    refreshMailCount();
+  } else {
+    renderMailWidget({ connected: false });
+  }
+
+  // 处理弹窗回调
+  msalApp.handleRedirectCallback(() => {
+    if (msalApp.getAccount()) {
+      mailAccount = msalApp.getAccount();
+      refreshMailCount();
+    }
+  });
+}
+
+function loginOutlook() {
+  if (!msalApp) { showToast('Outlook 未配置，请先填入 Client ID'); return; }
+  msalApp.loginPopup({ scopes: ['Mail.Read'] })
+    .then(() => {
+      mailAccount = msalApp.getAccount();
+      refreshMailCount();
+    })
+    .catch(err => {
+      showToast('登录失败：' + (err.message || err));
+    });
+}
+
+function logoutOutlook() {
+  if (!msalApp || !mailAccount) return;
+  msalApp.logout();
+}
+
+async function refreshMailCount() {
+  if (!msalApp || !mailAccount) return;
+  const refreshBtn = document.getElementById('mailRefreshBtn');
+  refreshBtn.style.display = '';
+  refreshBtn.classList.add('spinning');
+  try {
+    const token = await msalApp.acquireTokenSilent({ scopes: ['Mail.Read'] });
+    const resp = await fetch('https://graph.microsoft.com/v1.0/me/mailFolders/inbox?$select=unreadItemCount', {
+      headers: { Authorization: 'Bearer ' + token.accessToken }
+    });
+    if (!resp.ok) throw new Error('API ' + resp.status);
+    const data = await resp.json();
+    const count = data.unreadItemCount || 0;
+    const email = mailAccount.userName || mailAccount.idTokenClaims?.email || 'Outlook';
+    renderMailWidget({ connected: true, count, email });
+  } catch (err) {
+    // 静默续期失败 → 弹窗续期
+    if (err.name === 'InteractionRequiredAuthError') {
+      try {
+        await msalApp.acquireTokenPopup({ scopes: ['Mail.Read'] });
+        refreshMailCount();
+      } catch (e) {
+        renderMailWidget({ connected: false, reason: 'token-expired' });
+      }
+    } else {
+      renderMailWidget({ connected: false, reason: 'error' });
+    }
+  } finally {
+    refreshBtn.classList.remove('spinning');
+  }
+}
+
+function renderMailWidget(state) {
+  const widget = document.getElementById('mailWidget');
+  const label = document.getElementById('mailLabel');
+  const count = document.getElementById('mailCount');
+  const account = document.getElementById('mailAccount');
+  const refreshBtn = document.getElementById('mailRefreshBtn');
+
+  if (state.connected) {
+    widget.classList.remove('logged-out');
+    label.textContent = '未读邮件';
+    count.innerHTML = `${state.count}<small> 封</small>`;
+    account.textContent = state.email;
+    refreshBtn.style.display = '';
+    widget.onclick = () => {
+      window.open('https://outlook.live.com/mail/inbox', '_blank');
+    };
+    refreshBtn.onclick = (e) => { e.stopPropagation(); refreshMailCount(); };
+  } else {
+    widget.classList.add('logged-out');
+    refreshBtn.style.display = 'none';
+    if (state.reason === 'no-config') {
+      label.textContent = 'Outlook 邮箱';
+      count.textContent = '未配置';
+      account.textContent = '需填入 Client ID';
+      widget.onclick = () => showToast('请先在 Azure 注册应用获取 Client ID');
+    } else if (state.reason === 'token-expired') {
+      label.textContent = 'Outlook 邮箱';
+      count.textContent = '登录已过期';
+      account.textContent = '点击重新绑定';
+      widget.onclick = loginOutlook;
+    } else {
+      label.textContent = '关联 Outlook 邮箱';
+      count.textContent = '点击绑定';
+      account.textContent = '';
+      widget.onclick = loginOutlook;
+    }
+  }
+}
+
+// 初始化
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initOutlook);
+} else {
+  initOutlook();
+}
+// 每 5 分钟刷新一次未读数
+setInterval(() => { if (msalApp && msalApp.getAccount()) refreshMailCount(); }, 300000);
 
 function saveItem() {
   const title = document.getElementById('eventTitle').value.trim();
