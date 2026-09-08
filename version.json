@@ -1,7 +1,7 @@
 {
-  "version": "2.2.1",
-  "versionCode": 24,
+  "version": "2.2.2",
+  "versionCode": 25,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "新注册账户初始化空白校历\n校历设置弹窗新增加载默认校历按钮\n修复节假日编辑按钮",
+  "updateLog": "新用户首次登录弹窗选择空白校历或 CUHK 默认校历",
   "forceUpdate": false
 }

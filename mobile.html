@@ -1228,8 +1228,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.2.1';
-const APP_VERSION_CODE = 24;
+const APP_VERSION = '2.2.2';
+const APP_VERSION_CODE = 25;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -3204,12 +3204,45 @@ async function loadCalendarFromCloud() {
       HOLIDAYS = data.calendar.holidays || [];
       MAKEUP_DAYS = data.calendar.makeupDays || [];
     } else {
-      // 新用户 → 初始化空白校历（用户可在📅校历设置中加载默认CUHK校历）
-      SEMESTERS = [];
-      EXAM_PERIODS = [];
-      HOLIDAYS = [];
-      MAKEUP_DAYS = [];
+      // 新用户 → 弹出选择
+      const choice = await new Promise(resolve => {
+        const old = document.getElementById('calChoiceModal');
+        if (old) old.remove();
+        const modal = document.createElement('div');
+        modal.id = 'calChoiceModal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+          <div class="modal" style="max-width:360px;">
+            <div class="modal-header"><h3>📅 选择初始校历</h3></div>
+            <div class="modal-body" style="text-align:center; padding:20px 16px;">
+              <p style="margin:0 0 16px; font-size:14px; color:#2c3550;">首次使用，请选择初始校历类型：</p>
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <button class="btn-tool" id="choiceDefault" style="padding:14px; font-size:14px;">📚 CUHK 默认校历<br><span style="font-size:12px; color:#888;">含学期/节假日/考试期</span></button>
+                <button class="btn-tool" id="choiceEmpty" style="padding:14px; font-size:14px;">📄 空白校历<br><span style="font-size:12px; color:#888;">从零开始自定义</span></button>
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+        document.getElementById('choiceDefault').onclick = () => { modal.remove(); resolve('default'); };
+        document.getElementById('choiceEmpty').onclick = () => { modal.remove(); resolve('empty'); };
+        modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); resolve('empty'); } });
+      });
+      if (choice === 'default') {
+        SEMESTERS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.semesters));
+        EXAM_PERIODS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.examPeriods));
+        HOLIDAYS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.holidays));
+        MAKEUP_DAYS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.makeupDays));
+        showToast('📚 已加载 CUHK 默认校历');
+      } else {
+        SEMESTERS = [];
+        EXAM_PERIODS = [];
+        HOLIDAYS = [];
+        MAKEUP_DAYS = [];
+        showToast('📄 已创建空白校历');
+      }
       await saveCalendarToCloud();
+      renderCalendar();
     }
   } catch(e) { console.warn('校历同步异常', e); }
 }
