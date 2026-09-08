@@ -2,7 +2,7 @@
 
 > 目的：记录本项目所有实现方式。新会话先读本文件，避免重复探索代码。
 > **每次改完代码必须顺手更新本文件**（变更点 + 行号区间 + 版本号）。
-> 最后更新：v1.5.1（课表主界面一键云同步按钮）。
+> 最后更新：v1.6.0（应用密码锁）。
 
 ## 一、项目概览
 - 纯静态 PWA 课程表/日历提醒应用，**无后端**，部署 GitHub Pages：https://deliciouskfc.github.io/calendar-reminder/
@@ -101,4 +101,5 @@
 - v1.4.2 (09-08)：课件改按课程 section 共享（courseKey 归一化名字）；检查更新按钮美化
 - v1.5.0 (09-08)：**跨设备课件云同步**（GitHub 仓库 cloud-files/ 存储，见"三、数据模型"）
 - v1.5.1 (09-08)：课表主界面一键「☁️ 云同步」按钮
-- 当前版本：v1.5.1 / versionCode 12 / sw cache calendar-v12
+- v1.6.0 (09-08)：**应用密码锁**（两页通用）：`calendar_pw_hash`（SHA-256 hex，`sha256Hex()`，非安全上下文有 djb2 兜底 'fb' 前缀）+ `calendar_unlocked`（sessionStorage 会话免锁）。`initLock()` IIFE 同步启动（body 顶部静态 #lockOverlay + script 末尾渲染）：无 hash → setup 模式（两输入框，两遍校验 + 最少 4 位）；有 hash 且会话未解锁 → unlock 模式（单输入框 + 忘记密码重置链接，双 confirm 后 localStorage.clear()+IDB 删除+reload）。锁屏渐变背景 #4f8ef7→#6a4f9e
+- 当前版本：v1.6.0 / versionCode 13 / sw cache calendar-v13

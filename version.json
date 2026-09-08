@@ -1,7 +1,7 @@
 {
-  "version": "1.5.1",
-  "versionCode": 12,
+  "version": "1.6.0",
+  "versionCode": 13,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "课表主界面新增「☁️ 云同步」一键按钮\n自动上传本机新增 + 下载云端缺失课件，带浮动动画与结果汇报",
+  "updateLog": "新增应用密码锁\n首次打开要求设置密码（两遍校验）\n重新打开应用需输入密码解锁",
   "forceUpdate": false
 }

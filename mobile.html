@@ -605,6 +605,40 @@
   }
   .cloud-btn.warn { background: #fdecea; color: #c0392b; }
   .cloud-btn:active { filter: brightness(0.94); }
+  /* ===== 密码锁 ===== */
+  #lockOverlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: linear-gradient(160deg, #4f8ef7, #6a4f9e);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  #lockOverlay.hidden { display: none; }
+  .lock-card {
+    background: #fff; border-radius: 18px; padding: 28px 24px;
+    width: 100%; max-width: 340px; text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  }
+  .lock-logo { font-size: 40px; }
+  .lock-title { font-size: 18px; font-weight: 700; color: #2c3550; margin-top: 8px; }
+  .lock-sub { font-size: 12px; color: #8a93a8; margin: 6px 0 4px; line-height: 1.6; }
+  .lock-input {
+    width: 100%; box-sizing: border-box;
+    padding: 12px 14px; border: 1.5px solid #dfe3ee; border-radius: 10px;
+    font-size: 16px; margin-top: 10px; text-align: center; letter-spacing: 2px;
+  }
+  .lock-input:focus { outline: none; border-color: #4f8ef7; background: #f8faff; }
+  .lock-err { min-height: 18px; font-size: 12px; color: #e74c3c; margin-top: 8px; }
+  .lock-btn {
+    width: 100%; margin-top: 6px; padding: 12px; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, #4f8ef7, #6a4f9e); color: #fff;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(79, 142, 247, 0.35);
+  }
+  .lock-btn:active { transform: scale(0.97); }
+  .lock-reset {
+    background: none; border: none; margin-top: 14px;
+    font-size: 11px; color: #b0b7c6; text-decoration: underline; cursor: pointer;
+  }
   /* ===== 星期多选 chips ===== */
   .weekday-chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .wd-chip {
@@ -915,6 +949,8 @@
 </style>
 </head>
 <body>
+<!-- 密码锁（首次设置 / 每次新会话解锁） -->
+<div id="lockOverlay" class="hidden"></div>
 <!-- 开屏动画 -->
 <div id="splashScreen" class="splash-screen">
   <div class="splash-content">
@@ -1162,8 +1198,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.5.1';
-const APP_VERSION_CODE = 12;
+const APP_VERSION = '1.6.0';
+const APP_VERSION_CODE = 13;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1183,6 +1219,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.6.0', date: '2026-09-08', items: [
+    '新增应用密码锁：首次打开要求设置密码（需输入两遍校验）',
+    '每次重新打开应用需输入密码解锁，密码仅存哈希不存明文',
+    '忘记密码可在锁屏页清除全部数据后重新设置'
+  ]},
   { version: 'v1.5.1', date: '2026-09-08', items: [
     '课表主界面新增「☁️ 云同步」一键按钮：自动上传本机新增 + 下载云端缺失课件',
     '同步中按钮有浮动动画，完成后 toast 汇报上传/下载数量'
@@ -2953,6 +2994,111 @@ checkReminders();
 syncFromCloud().then(r => {
   if (r && r.downloaded) showToast('⬇️ 已从云端同步 ' + r.downloaded + ' 个课件');
 }).catch(() => {});
+
+/* ================================================================
+   密码锁：首次打开要求设置（两遍校验）；已有密码则每次新会话解锁
+   密码只存 SHA-256 哈希，不存明文；sessionStorage 记住本会话已解锁
+================================================================ */
+const PW_HASH_KEY = 'calendar_pw_hash';
+const PW_UNLOCK_KEY = 'calendar_unlocked';
+
+async function sha256Hex(str) {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    // 非安全上下文兜底（非加密级）
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+    return 'fb' + h.toString(16).padStart(8, '0');
+  }
+}
+
+function showLock() {
+  document.getElementById('lockOverlay').classList.remove('hidden');
+}
+
+function hideLock() {
+  document.getElementById('lockOverlay').classList.add('hidden');
+}
+
+function lockErr(msg) {
+  const el = document.getElementById('lockErr');
+  if (el) el.textContent = msg || '';
+}
+
+function renderLock(mode) {
+  // mode: 'setup' 首次设置（两遍校验） | 'unlock' 解锁
+  const overlay = document.getElementById('lockOverlay');
+  overlay.innerHTML = `
+    <div class="lock-card">
+      <div class="lock-logo">📅</div>
+      <div class="lock-title">${mode === 'setup' ? '设置应用密码' : '输入密码解锁'}</div>
+      <div class="lock-sub">${mode === 'setup' ? '首次使用请设置密码（至少 4 位）<br>需要输入两遍进行校验' : '本应用已设置密码保护'}</div>
+      <input type="password" id="lockPw1" class="lock-input" maxlength="32"
+             placeholder="${mode === 'setup' ? '设置密码' : '密码'}"
+             autocomplete="${mode === 'setup' ? 'new-password' : 'current-password'}">
+      ${mode === 'setup' ? '<input type="password" id="lockPw2" class="lock-input" maxlength="32" placeholder="再输入一遍确认" autocomplete="new-password">' : ''}
+      <div class="lock-err" id="lockErr"></div>
+      <button class="lock-btn" id="lockBtn">${mode === 'setup' ? '🔒 保存并进入' : '🔓 解锁'}</button>
+      ${mode === 'unlock' ? '<button class="lock-reset" id="lockReset">忘记密码？清除全部数据重置</button>' : ''}
+    </div>`;
+  const submit = async () => {
+    const pw1 = document.getElementById('lockPw1').value;
+    if (mode === 'setup') {
+      const pw2 = document.getElementById('lockPw2').value;
+      if (pw1.length < 4) { lockErr('密码至少 4 位'); return; }
+      if (pw1 !== pw2) { lockErr('两次输入的密码不一致，请重新输入'); return; }
+      lockErr('');
+      localStorage.setItem(PW_HASH_KEY, await sha256Hex(pw1));
+      sessionStorage.setItem(PW_UNLOCK_KEY, '1');
+      hideLock();
+      showToast('✅ 密码已设置');
+    } else {
+      lockErr('');
+      const h = await sha256Hex(pw1);
+      if (h === localStorage.getItem(PW_HASH_KEY)) {
+        sessionStorage.setItem(PW_UNLOCK_KEY, '1');
+        hideLock();
+      } else {
+        lockErr('密码错误，请重试');
+        const inp = document.getElementById('lockPw1');
+        inp.value = ''; inp.focus();
+      }
+    }
+  };
+  document.getElementById('lockBtn').onclick = submit;
+  overlay.querySelectorAll('.lock-input').forEach((inp, idx, arr) => {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        if (mode === 'setup' && idx === 0 && arr.length > 1) document.getElementById('lockPw2').focus();
+        else submit();
+      }
+    });
+  });
+  const resetBtn = document.getElementById('lockReset');
+  if (resetBtn) resetBtn.onclick = () => {
+    if (!confirm('将清除全部数据（课程 / 日程 / 课件 / 密码），并重新设置密码。确定？')) return;
+    if (!confirm('再次确认：此操作不可恢复！')) return;
+    try { indexedDB.deleteDatabase('calendar_files_v1'); } catch (e) {}
+    localStorage.clear();
+    sessionStorage.clear();
+    location.reload();
+  };
+  setTimeout(() => { const inp = document.getElementById('lockPw1'); if (inp) inp.focus(); }, 150);
+}
+
+// 启动判定（同步执行，避免应用内容闪现）
+(function initLock() {
+  const hash = localStorage.getItem(PW_HASH_KEY);
+  if (!hash) {
+    showLock();
+    renderLock('setup');   // 首次打开：要求设置密码
+  } else if (sessionStorage.getItem(PW_UNLOCK_KEY) !== '1') {
+    showLock();
+    renderLock('unlock');  // 新会话：要求解锁
+  }
+})();
 
 /* ================================================================
    开屏动画隐藏（三重保险：DOMContentLoaded / load / 兜底超时）
