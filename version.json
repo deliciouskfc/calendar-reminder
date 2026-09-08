@@ -1,7 +1,7 @@
 {
-  "version": "1.4.0",
-  "versionCode": 8,
+  "version": "1.3.2",
+  "versionCode": 7,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "新增 Outlook 邮箱关联，绑定后显示未读邮件数\n需要 Azure 注册应用获取 Client ID 后才能使用",
+  "updateLog": "加课表单星期改为多选，一次添加一周多天的课程",
   "forceUpdate": false
 }
