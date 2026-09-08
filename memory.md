@@ -2,7 +2,7 @@
 
 > 目的：记录本项目所有实现方式。新会话先读本文件，避免重复探索代码。
 > **每次改完代码必须顺手更新本文件**（变更点 + 行号区间 + 版本号）。
-> 最后更新：v1.4.1（iPad 路由 + 手动检查更新 + 长按拖拽）。
+> 最后更新：v1.4.2（课件按 section 共享 + 按钮美化）。
 
 ## 一、项目概览
 - 纯静态 PWA 课程表/日历提醒应用，**无后端**，部署 GitHub Pages：https://deliciouskfc.github.io/calendar-reminder/
@@ -33,11 +33,12 @@
 - **event 字段**：`id, title, date(YYYY-MM-DD), start, end, type('exam'|'event'), location, remind(提前分钟), url`
 - 工具函数（mobile.html ~1252）：`pad, dateKey, uuid, escapeHtml, timeToMinutes`
 - **课件文件存储（IndexedDB，仅 mobile.html）**：库 `calendar_files_v1`（版本 1）、store `files`（keyPath 'id'）
-  - 记录：`{id, courseId, name, type, size, blob(Blob 原样存), addedAt}`
-  - helper（mobile.html ~1350）：`openFileDB / fileDb(mode,fn) / dbAddFiles / dbGetAllFiles / dbDeleteFile`
-  - `saveData()` 末尾调用 `pruneOrphanFiles()` 自动清理已退课程的无主附件
+  - 记录：`{id, courseId, fileKey, name, type, size, blob(Blob 原样存), addedAt}`
+  - **关联 key（v1.4.2）**：课件按"课程 section"共享——`courseKey(c)` = 课程名转大写 + 去空格/连字符/括号（'CSC 1001-L02' → 'CSC1001L02'）。同一 section 的所有周次时间段共享同一份课件；不同 section（L02 vs T04）互不混淆。`fileRecordKey(f)` 兼容旧记录（无 fileKey 时用 courseId 反查）。筛选/角标/清理全部用 key 匹配，不再用 courseId
+  - helper（mobile.html ~1400）：`courseKey / fileRecordKey / openFileDB / fileDb(mode,fn) / dbAddFiles / dbGetAllFiles / dbDeleteFile`
+  - `saveData()` 末尾调用 `pruneOrphanFiles()` 自动清理无主附件（key 不在任何课程中）
   - 弹窗 `#fileOverlay`（底部 sheet，复用 .modal-overlay/.modal）：`openFileSheet(course)` → 列表（图标按扩展名着色）+ 打开（createObjectURL 新标签）+ 删除；`navigator.storage.persist()` 申请持久化配额，`storage.estimate()` 显示用量；单文件上限 100MB
-  - 课表角标：`renderSchedule()` 末尾调 `decorateAttachmentBadges()`，给有课件的课程块加 `.cc-file-badge`（📄N）；`attachCountsDirty` 脏标记控制重查
+  - 课表角标：`renderSchedule()` 末尾调 `decorateAttachmentBadges()`，给有课件的课程块加 `.cc-file-badge`（📄N，按 section key 计数，该 section 每个时间段都有角标）；`attachCountsDirty` 脏标记控制重查
 
 ## 四、校历逻辑（mobile.html ~1158-1250）
 - 常量表：`SEMESTERS`（含 type:'independent' 独立探索期）、`EXAM_PERIODS`、`HOLIDAYS`、`MAKEUP_DAYS`（{date, weekdayAs: 补课按周几上}）
@@ -66,7 +67,7 @@
 
 ## 六·一、版本更新机制（v1.4.1）
 - 自动检查：两页启动 2 秒后 `checkForUpdate()`，fetch version.json（?t= 防缓存），versionCode 或 version 更新 → `showUpdateDialog`（稍后/立即更新）
-- 手动检查：更新日志弹窗内「🔄 检查更新」按钮 → `manualCheckUpdate(btn)`，发现新版**直接自动** `applyWebUpdate()`（清空全部 caches + reg.update() + reload）；已是最新 → showToast
+- 手动检查：更新日志弹窗内「🔄 检查更新」按钮（`btn btn-update` 紫色渐变高亮款，两页均有）→ `manualCheckUpdate(btn)`，发现新版**直接自动** `applyWebUpdate()`（清空全部 caches + reg.update() + reload）；已是最新 → showToast
 - `applyWebUpdate()`：网页 / iOS PWA 的更新方式；Android standalone 仍走 APK 下载（downloadUrl）
 - **sw.js fetch 策略**：页面导航（mode==='navigate' 或 accept 含 text/html）= 网络优先，离线回退缓存；其他资源 = 缓存优先回填。发版后一次刷新即见新版
 - 两页各有缓存清理：只保留 `'calendar-v' + APP_VERSION_CODE`（v1.4.1 修复了硬编码 calendar-v3 会误删当前缓存的旧 bug）
@@ -90,4 +91,5 @@
 - v1.4.0（邮箱，已回退删除）
 - v1.4.0 (09-08)：**课程关联本地课件文件**（手机端 IndexedDB，见"三、数据模型"）— 复用了回退前的版本号
 - v1.4.1 (09-08)：iPad/Android 自动路由到手机版；更新日志弹窗加「🔄 检查更新」（发现新版自动更新）；拖拽改长按 280ms 触发；修 iOS PWA 更新误跳 APK bug；sw.js 页面改网络优先；修 calendar-v3 硬编码缓存清理 bug
-- 当前版本：v1.4.1 / versionCode 9 / sw cache calendar-v9
+- v1.4.2 (09-08)：课件改按课程 section 共享（courseKey 归一化名字）；检查更新按钮美化
+- 当前版本：v1.4.2 / versionCode 10 / sw cache calendar-v10

@@ -73,6 +73,17 @@
     transition: all 0.15s;
   }
   .btn:hover { background: rgba(255,255,255,0.3); }
+  /* 检查更新按钮（渐变高亮款） */
+  .btn.btn-update {
+    background: linear-gradient(135deg, #5a6fd6, #6a4f9e);
+    color: #fff;
+    border: none;
+    font-weight: 600;
+    box-shadow: 0 3px 10px rgba(90, 111, 214, 0.35);
+  }
+  .btn.btn-update:hover { background: linear-gradient(135deg, #4d61c9, #5d4490); }
+  .btn.btn-update:active { transform: scale(0.96); box-shadow: 0 2px 6px rgba(90, 111, 214, 0.3); }
+  .btn.btn-update:disabled { opacity: 0.75; transform: none; }
   .btn-primary { background: #4e5db0; border-color: #4e5db0; }
   .btn-primary:hover { background: #3e4d9e; }
   .btn-danger { background: #e74c3c; border-color: #e74c3c; }
@@ -1066,7 +1077,7 @@
     <h3>📜 更新日志</h3>
     <div class="changelog-list" id="changelogList"></div>
     <div class="modal-actions">
-      <button class="btn" id="checkUpdateBtn">🔄 检查更新</button>
+      <button class="btn btn-update" id="checkUpdateBtn">🔄 检查更新</button>
       <button class="btn btn-primary" id="changelogCloseBtn">关闭</button>
     </div>
   </div>
@@ -1076,8 +1087,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.4.1';
-const APP_VERSION_CODE = 9;
+const APP_VERSION = '1.4.2';
+const APP_VERSION_CODE = 10;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1097,6 +1108,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.4.2', date: '2026-09-08', items: [
+    '课件按课程 section 共享关联（同一门课所有时间段共享，不同 section 不混淆）',
+    '美化「检查更新」按钮'
+  ]},
   { version: 'v1.4.1', date: '2026-09-08', items: [
     'iPad / 平板打开本页面自动进入手机版，可正常使用课件功能',
     '更新日志弹窗新增「🔄 检查更新」按钮，发现新版本自动清缓存并更新',

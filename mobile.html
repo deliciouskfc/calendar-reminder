@@ -56,6 +56,17 @@
     transition: all 0.15s;
   }
   .btn:hover { background: rgba(255,255,255,0.3); }
+  /* 检查更新按钮（渐变高亮款） */
+  .btn.btn-update {
+    background: linear-gradient(135deg, #5a6fd6, #6a4f9e);
+    color: #fff;
+    border: none;
+    font-weight: 600;
+    box-shadow: 0 3px 10px rgba(90, 111, 214, 0.35);
+  }
+  .btn.btn-update:hover { background: linear-gradient(135deg, #4d61c9, #5d4490); }
+  .btn.btn-update:active { transform: scale(0.96); box-shadow: 0 2px 6px rgba(90, 111, 214, 0.3); }
+  .btn.btn-update:disabled { opacity: 0.75; transform: none; }
   .btn-primary { background: #4e5db0; border-color: #4e5db0; }
   .btn-primary:hover { background: #3e4d9e; }
   .btn-danger { background: #e74c3c; border-color: #e74c3c; }
@@ -1096,7 +1107,7 @@
     <h3>📜 更新日志</h3>
     <div class="changelog-list" id="changelogList"></div>
     <div class="modal-actions">
-      <button class="btn" id="checkUpdateBtn">🔄 检查更新</button>
+      <button class="btn btn-update" id="checkUpdateBtn">🔄 检查更新</button>
       <button class="btn btn-primary" id="changelogCloseBtn">关闭</button>
     </div>
   </div>
@@ -1121,8 +1132,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.4.1';
-const APP_VERSION_CODE = 9;
+const APP_VERSION = '1.4.2';
+const APP_VERSION_CODE = 10;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1142,6 +1153,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.4.2', date: '2026-09-08', items: [
+    '课件按课程 section 共享关联：同一门课的所有周次时间段（如所有 CSC 1001-L02）都能看到同一份课件',
+    '不同 section（如 CSC 1001-T04）互不混淆',
+    '美化「检查更新」按钮'
+  ]},
   { version: 'v1.4.1', date: '2026-09-08', items: [
     'iPad / 平板打开桌面版页面时自动进入手机版，可正常使用课件功能',
     '更新日志弹窗新增「🔄 检查更新」按钮，发现新版本自动清缓存并更新',
@@ -1390,12 +1406,25 @@ const dbAddFiles = (records) => fileDb('readwrite', st => {
 const dbGetAllFiles = () => fileDb('readonly', st => st.getAll());
 const dbDeleteFile = (id) => fileDb('readwrite', st => st.delete(id));
 
+// 课件按"课程 section"关联：同一 section 的所有周次时间段共享课件
+// key = 课程名去空格/连字符并转大写，如 'CSC 1001-L02' → 'CSC1001L02'
+// CSC1001-L02 与 CSC1001-T04 名字不同 → 不会互相混淆
+function courseKey(c) {
+  return ((c && c.name) || '').toUpperCase().replace(/[\s\-_（）()]/g, '');
+}
+// 兼容旧记录：无 fileKey 时用 courseId 反查课程名
+function fileRecordKey(f) {
+  if (f.fileKey) return f.fileKey;
+  const c = courses.find(x => x.id === f.courseId);
+  return c ? courseKey(c) : '';
+}
+
 // 删除课程后清理其附件（saveData 时自动执行）
 async function pruneOrphanFiles() {
   try {
-    const ids = new Set(courses.map(c => c.id));
+    const keys = new Set(courses.map(courseKey));
     const files = await dbGetAllFiles();
-    const dead = files.filter(f => !ids.has(f.courseId));
+    const dead = files.filter(f => !keys.has(fileRecordKey(f)));
     for (const f of dead) await dbDeleteFile(f.id);
     if (dead.length) attachCountsDirty = true;
   } catch (e) { /* IndexedDB 不可用时忽略 */ }
@@ -1437,7 +1466,8 @@ async function renderFileList() {
   const listEl = document.getElementById('fileList');
   const infoEl = document.getElementById('storageInfo');
   const files = await dbGetAllFiles();
-  const mine = files.filter(f => f.courseId === fileSheetCourse.id)
+  const key = courseKey(fileSheetCourse);
+  const mine = files.filter(f => fileRecordKey(f) === key)
                     .sort((a, b) => b.addedAt - a.addedAt);
 
   if (mine.length === 0) {
@@ -1503,6 +1533,7 @@ filePickInput.addEventListener('change', async () => {
     }
     records.push({
       id: uuid(), courseId: fileSheetCourse.id,
+      fileKey: courseKey(fileSheetCourse),
       name: f.name, type: f.type || '', size: f.size,
       blob: f, addedAt: Date.now()
     });
@@ -1528,17 +1559,22 @@ async function decorateAttachmentBadges() {
   if (attachCountsDirty) {
     try {
       const files = await dbGetAllFiles();
-      window._attachCounts = files.reduce((m, f) => (m[f.courseId] = (m[f.courseId] || 0) + 1, m), {});
+      window._attachCounts = files.reduce((m, f) => {
+        const k = fileRecordKey(f);
+        if (k) m[k] = (m[k] || 0) + 1;
+        return m;
+      }, {});
       attachCountsDirty = false;
     } catch (e) { window._attachCounts = {}; }
   }
   const counts = window._attachCounts || {};
   document.querySelectorAll('.tt-course').forEach(el => {
     const c = el._course;
-    if (c && counts[c.id] > 0) {
+    const n = c ? (counts[courseKey(c)] || 0) : 0;
+    if (n > 0) {
       const b = document.createElement('span');
       b.className = 'cc-file-badge';
-      b.textContent = '📄' + counts[c.id];
+      b.textContent = '📄' + n;
       el.appendChild(b);
     }
   });
@@ -2325,7 +2361,7 @@ async function showPopupCourseMenu(clickEvent, course) {
   // 统计该课程已关联的课件文件数
   let fileCount = 0;
   try {
-    fileCount = (await dbGetAllFiles()).filter(f => f.courseId === course.id).length;
+    fileCount = (await dbGetAllFiles()).filter(f => fileRecordKey(f) === courseKey(course)).length;
   } catch (e) {}
 
   menu.innerHTML = `
