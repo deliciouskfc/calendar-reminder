@@ -528,6 +528,20 @@
   .drop-info { flex: 1; min-width: 0; }
   .drop-name { font-size: 13px; font-weight: 600; color: #2c3e50; }
   .drop-meta { font-size: 11px; color: #95a5a6; margin-top: 1px; }
+  /* ===== 星期多选 chips ===== */
+  .weekday-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .wd-chip {
+    position: relative; cursor: pointer; display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 38px; height: 34px; border: 2px solid #e0e3eb;
+    border-radius: 8px; font-size: 14px; font-weight: 600;
+    color: #95a5a6; transition: all 0.12s; user-select: none;
+  }
+  .wd-chip input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .wd-chip:has(input:checked) {
+    background: #5a6fd6; border-color: #5a6fd6; color: #fff;
+  }
+  .wd-chip:hover { border-color: #5a6fd6; }
   /* ===== Toast 提示 ===== */
   .app-toast {
     position: fixed; left: 50%; bottom: 40px;
@@ -992,28 +1006,26 @@
       <label>课程名称</label>
       <input type="text" id="newCourseName" placeholder="例如：CSC 1001-L02">
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>星期</label>
-        <select id="newCourseWeekday">
-          <option value="1">周一</option>
-          <option value="2">周二</option>
-          <option value="3">周三</option>
-          <option value="4">周四</option>
-          <option value="5">周五</option>
-          <option value="6">周六</option>
-          <option value="7">周日</option>
-        </select>
+    <div class="form-group">
+      <label>星期（可多选）</label>
+      <div class="weekday-chips" id="newCourseWeekdays">
+        <label class="wd-chip"><input type="checkbox" value="1"><span>一</span></label>
+        <label class="wd-chip"><input type="checkbox" value="2"><span>二</span></label>
+        <label class="wd-chip"><input type="checkbox" value="3"><span>三</span></label>
+        <label class="wd-chip"><input type="checkbox" value="4"><span>四</span></label>
+        <label class="wd-chip"><input type="checkbox" value="5"><span>五</span></label>
+        <label class="wd-chip"><input type="checkbox" value="6"><span>六</span></label>
+        <label class="wd-chip"><input type="checkbox" value="7"><span>日</span></label>
       </div>
-      <div class="form-group">
-        <label>类型</label>
-        <select id="newCourseType">
-          <option value="Lecture">Lecture</option>
-          <option value="Tutorial">Tutorial</option>
-          <option value="Lab">Lab</option>
-          <option value="Seminar">Seminar</option>
-        </select>
-      </div>
+    </div>
+    <div class="form-group">
+      <label>类型</label>
+      <select id="newCourseType">
+        <option value="Lecture">Lecture</option>
+        <option value="Tutorial">Tutorial</option>
+        <option value="Lab">Lab</option>
+        <option value="Seminar">Seminar</option>
+      </select>
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -1055,8 +1067,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.3.1';
-const APP_VERSION_CODE = 6;
+const APP_VERSION = '1.3.2';
+const APP_VERSION_CODE = 7;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1076,6 +1088,9 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.3.2', date: '2026-09-08', items: [
+    '加课表单星期改为多选 chips，一次添加一周多天的课程'
+  ]},
   { version: 'v1.3.1', date: '2026-09-08', items: [
     '新增拖拽撤销按钮（可连续撤销多次）',
     '电脑端日历视图不再显示课程标签，只显示考试和事件'
@@ -2279,7 +2294,7 @@ const addCourseOverlay = document.getElementById('addCourseOverlay');
 document.getElementById('restoreCoursesBtn').onclick = () => {
   hidePopup();
   document.getElementById('newCourseName').value = '';
-  document.getElementById('newCourseWeekday').value = '1';
+  document.querySelectorAll('#newCourseWeekdays input[type=checkbox]').forEach(cb => cb.checked = false);
   document.getElementById('newCourseType').value = 'Lecture';
   document.getElementById('newCourseStart').value = '08:30';
   document.getElementById('newCourseEnd').value = '10:20';
@@ -2292,20 +2307,24 @@ document.getElementById('addCourseCancelBtn').onclick = () => addCourseOverlay.c
 addCourseOverlay.onclick = (e) => { if (e.target === addCourseOverlay) addCourseOverlay.classList.remove('active'); };
 document.getElementById('addCourseSaveBtn').onclick = () => {
   const name = document.getElementById('newCourseName').value.trim();
-  const weekday = parseInt(document.getElementById('newCourseWeekday').value, 10);
+  const weekdays = Array.from(document.querySelectorAll('#newCourseWeekdays input[type=checkbox]:checked')).map(cb => parseInt(cb.value, 10));
   const type = document.getElementById('newCourseType').value;
   const start = document.getElementById('newCourseStart').value;
   const end = document.getElementById('newCourseEnd').value;
   const location = document.getElementById('newCourseLocation').value.trim();
   const instructor = document.getElementById('newCourseInstructor').value.trim();
   if (!name) { showToast('请填写课程名称'); return; }
+  if (weekdays.length === 0) { showToast('请至少选择一个星期'); return; }
   if (!start || !end) { showToast('请填写时间'); return; }
   if (end <= start) { showToast('结束时间必须晚于开始时间'); return; }
-  courses.push({ id: uuid(), name, weekday, start, end, location, type, instructor, url: '' });
+  weekdays.forEach(wd => {
+    courses.push({ id: uuid(), name, weekday: wd, start, end, location, type, instructor, url: '' });
+  });
   saveData();
   renderCalendar(); renderEventsList(); renderSchedule();
   addCourseOverlay.classList.remove('active');
-  showToast(`已添加 ${name}，日历与课表已同步`);
+  const wdNames = weekdays.map(wd => '周' + ['日','一','二','三','四','五','六'][wd === 7 ? 0 : wd]).join('、');
+  showToast(`已添加 ${name}（${wdNames}），日历与课表已同步`);
 };
 
 /* ================================================================
