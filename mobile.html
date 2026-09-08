@@ -1215,8 +1215,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.1.0';
-const APP_VERSION_CODE = 21;
+const APP_VERSION = '2.1.1';
+const APP_VERSION_CODE = 22;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1250,6 +1250,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.1.1', date: '2026-09-08', items: [
+    '新注册账户打开即空白课表，不再预置 CSC/ECO 默认数据',
+    '清理测试账户数据，仅保留主人账户'
+  ]},
   { version: 'v2.1.0', date: '2026-09-08', items: [
     '一个账户可创建多个课表日历，下拉切换、新建、重命名、删除',
     '课表工具栏新增显眼的 ⏻ 退出登录按钮',
@@ -1470,21 +1474,18 @@ function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === null) {
-      events = [...DEFAULT_EVENTS];
-      courses = [...DEFAULT_COURSES];
+      // 新设备/新用户：保持空白，不再预置 CSC/ECO 默认课表（v2.1.1）
+      events = [];
+      courses = [];
       saveData();
     } else {
       const data = JSON.parse(raw);
-      events = data.events || [...DEFAULT_EVENTS];
-      courses = data.courses || [...DEFAULT_COURSES];
-      if (!events.find(e => e.id === 'default-csc-exam')) {
-        events.unshift(...DEFAULT_EVENTS);
-        saveData();
-      }
+      events = data.events || [];
+      courses = data.courses || [];
     }
   } catch(e) {
-    events = [...DEFAULT_EVENTS];
-    courses = [...DEFAULT_COURSES];
+    events = [];
+    courses = [];
   }
 }
 function saveData() {
@@ -3185,8 +3186,8 @@ async function loadAccountData() {
     if (error) { showToast('⚠️ 云端读取失败：' + error.message); return; }
     timetables = data || [];
     if (timetables.length === 0) {
-      // 账户全新 → 把本机课表作为第一个课表导入
-      const hasLocal = localStorage.getItem(STORAGE_KEY) !== null;
+      // 账户全新 → 把本机课表作为第一个课表导入（仅当本地有真实非空数据）
+      const hasLocal = events.length > 0 || courses.length > 0;
       const isDefault = JSON.stringify({ events, courses }) === JSON.stringify({ events: [...DEFAULT_EVENTS], courses: [...DEFAULT_COURSES] });
       const declineKey = 'calendar_import_declined_' + currentUser.id;
       const shouldImport = hasLocal && !isDefault && !localStorage.getItem(declineKey)

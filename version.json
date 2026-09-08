@@ -1,7 +1,7 @@
 {
-  "version": "2.1.0",
-  "versionCode": 21,
+  "version": "2.1.1",
+  "versionCode": 22,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "一个账户可创建多个课表日历\n显眼退出登录按钮\n每个课表独立云端保存",
+  "updateLog": "新注册账户打开即空白课表\n不再预置 CSC/ECO 默认数据\n清理测试账户",
   "forceUpdate": false
 }
