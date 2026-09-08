@@ -1263,8 +1263,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.7.1';
-const APP_VERSION_CODE = 38;
+const APP_VERSION = '2.7.2';
+const APP_VERSION_CODE = 39;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1298,6 +1298,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.7.2', date: '2026-09-08', items: [
+    '新增 Broadcast 即时通知通道（不依赖数据库复制，收发与已读秒级同步）',
+    '修复兜底轮询只更新数据不刷新界面的问题，留言板列表/会话视图都会自动刷新'
+  ]},
   { version: 'v2.7.1', date: '2026-09-08', items: [
     '修复实时推送不生效的问题：显式携带登录令牌订阅通道，令牌刷新后自动同步',
     '留言板底部新增推送连接状态显示，推送断开自动重连'
@@ -3814,11 +3818,13 @@ async function loadMessages(silent) {
     });
     msgCache.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
     updateMsgBadge();
-    // 会话窗口正开着时：刷新显示（已读状态实时更新）+ 新收到的留言自动标记已读（红点即时消失）
+    // 留言板开着时：实时刷新当前视图（会话窗口刷新+自动已读；列表视图同步刷新）
     const tv = document.getElementById('msgThreadView');
     if (msgThreadPeer && tv && tv.style.display !== 'none') {
       showMsgThread();
       markThreadRead(msgThreadPeer.id);
+    } else if (document.getElementById('msgBoardModal')) {
+      showMsgList();
     }
   } catch (e) { /* 静默 */ }
 }
@@ -3839,6 +3845,7 @@ function updateMsgBadge() {
 function startMsgPolling(ms) {
   msgPollMs = ms || 15000;
   setupMsgRealtime();
+  setupMsgNotify();
   clearInterval(msgTimer);
   if (!sb || !currentUser) return;
   loadMessages(true);
@@ -3910,6 +3917,32 @@ async function setupMsgRealtime() {
         }
       });
   } catch (e) { /* 实时推送不可用时静默，轮询兜底 */ }
+}
+
+/* ---------- 📣 Broadcast 即时通知（纯消息转发，不依赖数据库复制管道） ---------- */
+let msgNotifyChannel = null;
+
+function setupMsgNotify() {
+  if (!sb || !currentUser) return;
+  if (msgNotifyChannel) return;
+  try {
+    msgNotifyChannel = sb.channel('msg-notify')
+      .on('broadcast', { event: 'new-msg' }, (m) => {
+        try { const p = m.payload || {}; if (currentUser && p.to === currentUser.id) loadMessages(true); } catch (e) {}
+      })
+      .on('broadcast', { event: 'msg-read' }, (m) => {
+        try { const p = m.payload || {}; if (currentUser && p.to === currentUser.id) loadMessages(true); } catch (e) {}
+      })
+      .subscribe(() => {});
+  } catch (e) { /* 不可用时静默，轮询兜底 */ }
+}
+
+function msgNotifyBroadcast(event, to) {
+  try {
+    if (msgNotifyChannel && currentUser && to) {
+      msgNotifyChannel.send({ type: 'broadcast', event: event, payload: { to: to, from: currentUser.id } });
+    }
+  } catch (e) { /* 静默 */ }
 }
 
 function onMsgPush(payload) {
@@ -4149,6 +4182,7 @@ async function markThreadRead(peerId) {
     await sb.from('messages').update({ is_read: true }).in('id', unread.map(m => m.id));
     unread.forEach(m => m.is_read = true);
     updateMsgBadge();
+    msgNotifyBroadcast('msg-read', peerId);
   } catch (e) { /* 静默 */ }
 }
 
@@ -4176,6 +4210,7 @@ async function sendMsg() {
     const { error } = await sb.from('messages').insert(row);
     if (!error) {
       showToast('✅ 已发送');
+      msgNotifyBroadcast('new-msg', row.recipient_id);
     } else {
       showToast('⚠️ 发送失败：' + error.message);
     }
