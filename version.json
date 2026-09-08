@@ -1,7 +1,7 @@
 {
-  "version": "2.3.1",
-  "versionCode": 27,
+  "version": "2.3.2",
+  "versionCode": 28,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "工具栏重新设计：次要功能收进「更多」折叠菜单\n所有按钮改为图标+文字，不再用纯抽象图标\n修复课表选择和使用教程点击无反应的问题",
+  "updateLog": "重写使用教程和校历设置弹窗\n事件绑定移至折叠菜单内，确保点击可靠\n弹窗使用内联样式保证在iPad上正常显示",
   "forceUpdate": false
 }

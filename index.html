@@ -1183,8 +1183,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.3.1';
-const APP_VERSION_CODE = 27;
+const APP_VERSION = '2.3.2';
+const APP_VERSION_CODE = 28;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -2781,33 +2781,34 @@ function openTutorial() {
   const modal = document.createElement('div');
   modal.id = 'tutorialModal';
   modal.className = 'modal-overlay';
+  modal.setAttribute('style', 'display:flex; z-index:99999; position:fixed; inset:0; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; padding:16px;');
   modal.innerHTML = `
-    <div class="modal cal-settings-modal">
-      <div class="modal-header">
-        <h3>📖 使用教程</h3>
-        <button class="close-btn" id="tutorialClose">✕</button>
+    <div style="background:#fff; border-radius:14px; width:100%; max-width:440px; max-height:85vh; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,0.3);">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid #eee;">
+        <h3 style="margin:0; font-size:17px;">📖 使用教程</h3>
+        <button id="tutorialClose" style="background:none; border:none; font-size:20px; cursor:pointer; color:#888;">✕</button>
       </div>
-      <div class="modal-body" style="max-height:70vh; overflow-y:auto; font-size:14px; line-height:1.7;">
-        <h4 style="margin:8px 0 4px;">📝 添加课程</h4>
+      <div style="padding:16px; max-height:70vh; overflow-y:auto; font-size:14px; line-height:1.7; color:#2c3550;">
+        <h4 style="margin:10px 0 4px; font-size:15px;">📝 添加课程</h4>
         <p style="margin:0 0 10px;">点击课表工具栏的「➕ 加课」按钮，填写课程名、星期、时间、地点等即可。</p>
-        <h4 style="margin:8px 0 4px;">🗑 退课</h4>
+        <h4 style="margin:10px 0 4px; font-size:15px;">🗑 退课</h4>
         <p style="margin:0 0 10px;">点击「🗑 退课」勾选要删除的课程，确认后删除。</p>
-        <h4 style="margin:8px 0 4px;">✋ 拖动换课</h4>
+        <h4 style="margin:10px 0 4px; font-size:15px;">✋ 拖动换课</h4>
         <p style="margin:0 0 10px;">在课表上<strong>长按课程块约 0.3 秒</strong>（手机会震动），拖动到目标时间段即可。直接滑动不会误触。</p>
-        <h4 style="margin:8px 0 4px;">↩ 撤销</h4>
+        <h4 style="margin:10px 0 4px; font-size:15px;">↩ 撤销</h4>
         <p style="margin:0 0 10px;">拖动换课后，「↩ 撤销」按钮会出现，可撤销上一次拖动。</p>
-        <h4 style="margin:8px 0 4px;">📚 多课表</h4>
-        <p style="margin:0 0 10px;">工具栏下拉框可切换课表；「＋」新建、「✏️」重命名、「🗑」删除（最后一个不可删）。每个课表独立保存到云端。</p>
-        <h4 style="margin:8px 0 4px;">📎 课件文件</h4>
+        <h4 style="margin:10px 0 4px; font-size:15px;">📚 多课表</h4>
+        <p style="margin:0 0 10px;">工具栏「☰ 更多」菜单可切换/新建/重命名/删除课表。每个课表独立保存到云端。</p>
+        <h4 style="margin:10px 0 4px; font-size:15px;">📎 课件文件</h4>
         <p style="margin:0 0 10px;">点击课程块 → 「📎 课件文件」可上传 PDF/图片等。同名课程（如 CSC 1001-L02 的周一/周三）共享同一批课件。</p>
-        <h4 style="margin:8px 0 4px;">☁️ 云同步</h4>
+        <h4 style="margin:10px 0 4px; font-size:15px;">☁️ 云同步</h4>
         <p style="margin:0 0 10px;">点击「☁️ 云同步」一键上传本地课件并下载云端缺失课件。需先在课件弹窗里配置 GitHub Token。</p>
-        <h4 style="margin:8px 0 4px;">📅 校历设置</h4>
-        <p style="margin:0 0 10px;">点击「📅」可添加/删除节假日、重置校历。校历数据保存在云端，只影响当前账户。</p>
-        <h4 style="margin:8px 0 4px;">🔐 账户与密码</h4>
-        <p style="margin:0 0 10px;">每次打开应用需输入密码解锁（同一会话免重复）。右上角「⏻」可退出登录切换账户。</p>
-        <h4 style="margin:8px 0 4px;">🔄 检查更新</h4>
-        <p style="margin:0 0 10px;">点击「📜 日志」→「🔄 检查更新」，有新版本会自动刷新应用。</p>
+        <h4 style="margin:10px 0 4px; font-size:15px;">📅 校历设置</h4>
+        <p style="margin:0 0 10px;">「☰ 更多」→「📅 校历设置」可添加/删除节假日。校历数据保存在云端，只影响当前账户。</p>
+        <h4 style="margin:10px 0 4px; font-size:15px;">🔐 账户与密码</h4>
+        <p style="margin:0 0 10px;">每次打开应用需输入密码解锁（同一会话免重复）。「☰ 更多」→「⏻ 退出登录」可切换账户。</p>
+        <h4 style="margin:10px 0 4px; font-size:15px;">🔄 检查更新</h4>
+        <p style="margin:0 0 10px;">点击顶部「📜 日志」→「🔄 检查更新」，有新版本会自动刷新应用。</p>
       </div>
     </div>
   `;
@@ -2822,26 +2823,26 @@ function openCalendarSettings() {
   const modal = document.createElement('div');
   modal.id = 'calSettingsModal';
   modal.className = 'modal-overlay';
+  modal.setAttribute('style', 'display:flex; z-index:99999; position:fixed; inset:0; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; padding:16px;');
+  const showLoadDefault = SEMESTERS.length === 0;
   modal.innerHTML = `
-    <div class="modal cal-settings-modal">
-      <div class="modal-header">
-        <h3>📅 校历设置</h3>
-        <button class="close-btn" id="calSettingsClose">✕</button>
+    <div style="background:#fff; border-radius:14px; width:100%; max-width:440px; max-height:85vh; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,0.3);">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid #eee;">
+        <h3 style="margin:0; font-size:17px;">📅 校历设置</h3>
+        <button id="calSettingsClose" style="background:none; border:none; font-size:20px; cursor:pointer; color:#888;">✕</button>
       </div>
-      <div class="modal-body">
-        <div class="cal-section">
-          <h4>🌴 节假日</h4>
-          <div class="holiday-list" id="holidayList"></div>
-          <div class="holiday-form">
-            <input type="text" id="newHolidayName" placeholder="名称（如：元旦）" />
-            <input type="date" id="newHolidayStart" />
-            <input type="date" id="newHolidayEnd" />
-            <button class="btn-tool" id="addHolidayBtn">＋ 添加</button>
-          </div>
+      <div style="padding:16px; max-height:70vh; overflow-y:auto;">
+        <h4 style="margin:0 0 8px; font-size:15px; color:#2c3550;">🌴 节假日</h4>
+        <div id="holidayList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <input type="text" id="newHolidayName" placeholder="名称（如：元旦）" style="flex:1; min-width:80px; padding:7px 8px; font-size:13px; border:1px solid #dfe2eb; border-radius:8px;" />
+          <input type="date" id="newHolidayStart" style="flex:1; min-width:80px; padding:7px 8px; font-size:13px; border:1px solid #dfe2eb; border-radius:8px;" />
+          <input type="date" id="newHolidayEnd" style="flex:1; min-width:80px; padding:7px 8px; font-size:13px; border:1px solid #dfe2eb; border-radius:8px;" />
+          <button id="addHolidayBtn" style="padding:7px 12px; font-size:13px; border:1px solid #dfe2eb; border-radius:8px; background:#6a5acd; color:#fff; cursor:pointer;">＋ 添加</button>
         </div>
         <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn-tool" id="loadDefaultCalBtn" style="${SEMESTERS.length === 0 ? '' : 'display:none;'}">📥 加载 CUHK 默认校历</button>
-          <button class="btn-tool danger" id="resetCalendarBtn" style="${SEMESTERS.length === 0 ? 'display:none;' : ''}">↺ 重置为默认校历</button>
+          <button id="loadDefaultCalBtn" style="${showLoadDefault ? '' : 'display:none;'}padding:8px 12px; font-size:13px; border:1px solid #dfe2eb; border-radius:8px; background:#fff; cursor:pointer;">📥 加载 CUHK 默认校历</button>
+          <button id="resetCalendarBtn" style="${showLoadDefault ? 'display:none;' : ''}padding:8px 12px; font-size:13px; border:1px solid #e74c3c; border-radius:8px; background:#fff; color:#e74c3c; cursor:pointer;">↺ 重置为默认校历</button>
         </div>
       </div>
     </div>
@@ -2899,10 +2900,10 @@ function renderHolidayList() {
   if (!list) return;
   if (HOLIDAYS.length === 0) { list.innerHTML = '<div style="color:#999;font-size:13px;">暂无节假日</div>'; return; }
   list.innerHTML = HOLIDAYS.map((h, i) => `
-    <div class="holiday-item">
-      <span class="holiday-name">${escapeHtml(h.name)}</span>
-      <span class="holiday-dates">${h.start}${h.end !== h.start ? ' ~ ' + h.end : ''}</span>
-      <button class="holiday-del" data-i="${i}">✕</button>
+    <div style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:#f8f9fc; border-radius:8px; border:1px solid #e8eaf2;">
+      <span style="flex:1; font-size:13px; font-weight:600; color:#2c3550;">${escapeHtml(h.name)}</span>
+      <span style="font-size:12px; color:#888;">${h.start}${h.end !== h.start ? ' ~ ' + h.end : ''}</span>
+      <button class="holiday-del" data-i="${i}" style="background:none; border:none; color:#e74c3c; cursor:pointer; font-size:16px; padding:0 4px;">✕</button>
     </div>
   `).join('');
   list.querySelectorAll('.holiday-del').forEach(btn => {
@@ -3043,22 +3044,32 @@ function renderTimetableSwitcher() {
 
 // 更多菜单折叠
 function setupMoreMenu() {
+  const wrap = document.getElementById('moreMenuWrap');
   const btn = document.getElementById('moreMenuBtn');
   const dd = document.getElementById('moreDropdown');
-  if (!btn || !dd) return;
+  if (!btn || !dd || !wrap) return;
   btn.onclick = (e) => {
     e.stopPropagation();
     const open = dd.style.display !== 'none';
     dd.style.display = open ? 'none' : 'flex';
   };
   document.addEventListener('click', (e) => {
-    if (!document.getElementById('moreMenuWrap').contains(e.target)) {
-      dd.style.display = 'none';
-    }
+    if (!wrap.contains(e.target)) dd.style.display = 'none';
   });
-  dd.querySelectorAll('.more-item').forEach(item => {
-    item.addEventListener('click', () => { dd.style.display = 'none'; });
-  });
+  const tutBtn = document.getElementById('tutorialBtn');
+  if (tutBtn) tutBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openTutorial(); };
+  const calBtn = document.getElementById('calSettingsBtn');
+  if (calBtn) calBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openCalendarSettings(); };
+  const newBtn = document.getElementById('ttNewBtn');
+  if (newBtn) newBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; const n = prompt('新课表名称：', '新课表'); if (n && n.trim()) createTimetable(n.trim()); };
+  const rnBtn = document.getElementById('ttRenameBtn');
+  if (rnBtn) rnBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; if (activeTimetableId) renameTimetable(activeTimetableId); };
+  const delBtn = document.getElementById('ttDeleteBtn');
+  if (delBtn) delBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; if (activeTimetableId) deleteTimetable(activeTimetableId); };
+  const outBtn = document.getElementById('logoutBtn2');
+  if (outBtn) outBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; doLogout(); };
+  const sel = document.getElementById('ttSelect');
+  if (sel) sel.onchange = (e) => { if (e.target.value) switchTimetable(e.target.value); };
 }
 
 function scheduleCloudPush(immediate) {
