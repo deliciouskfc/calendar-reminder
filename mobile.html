@@ -1068,6 +1068,7 @@
               <div class="more-sep"></div>
               <button class="more-item" id="calSettingsBtn" style="display:none;">📅 校历设置</button>
               <button class="more-item" id="tutorialBtn">❓ 使用教程</button>
+              <button class="more-item" id="msgBoardBtn" style="display:none;">💬 留言板</button>
               <div class="more-sep"></div>
               <button class="more-item danger" id="logoutBtn2" style="display:none;">⏻ 退出登录</button>
             </div>
@@ -1259,8 +1260,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.3.3';
-const APP_VERSION_CODE = 29;
+const APP_VERSION = '2.4.0';
+const APP_VERSION_CODE = 30;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1294,6 +1295,12 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.4.0', date: '2026-09-08', items: [
+    '新增 💬 留言板：管理员可给任何用户留言，对方可回复',
+    '留言板未读数角标提醒，60 秒自动刷新',
+    '管理员可在「用户管理」查看所有注册账户及其课表（只读）',
+    '普通用户可一键联系管理员'
+  ]},
   { version: 'v2.3.2', date: '2026-09-08', items: [
     '重写使用教程和校历设置弹窗，全部使用内联样式保证 iPad 上正常显示',
     '所有菜单项事件绑定统一收进「更多」菜单，修复点击无反应问题',
@@ -3234,6 +3241,7 @@ function renderUnlock() {
     sessionStorage.setItem(UNLOCK_KEY, '1');
     hideLock();
     await loadAccountData();
+    startMsgPolling();
     updateAccountBar();
   };
   document.getElementById('authBtn').onclick = submit;
@@ -3600,6 +3608,8 @@ function setupMoreMenu() {
   // 直接在这里绑定菜单项点击，确保事件一定触发
   const tutBtn = document.getElementById('tutorialBtn');
   if (tutBtn) tutBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openTutorial(); };
+  const msgBtn = document.getElementById('msgBoardBtn');
+  if (msgBtn) msgBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openMessageBoard(); };
   const calBtn = document.getElementById('calSettingsBtn');
   if (calBtn) calBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openCalendarSettings(); };
   const newBtn = document.getElementById('ttNewBtn');
@@ -3665,9 +3675,11 @@ function updateAccountBar() {
   const bar = document.getElementById('accountBar');
   const btn = document.getElementById('logoutBtn');
   const btn2 = document.getElementById('logoutBtn2');
+  const msgBtn = document.getElementById('msgBoardBtn');
   if (bar) bar.textContent = currentUser ? '👤 ' + currentUser.email : (SUPABASE_READY ? '未登录' : '未启用账户（未配置 Supabase）');
   if (btn) btn.style.display = (sb && currentUser) ? '' : 'none';
   if (btn2) btn2.style.display = (sb && currentUser) ? '' : 'none';
+  if (msgBtn) msgBtn.style.display = (sb && currentUser) ? '' : 'none';
 }
 
 function doLogout() {
@@ -3676,7 +3688,8 @@ function doLogout() {
     currentUser = null;
     activeTimetableId = null;
     timetables = [];
-    sessionStorage.removeItem(UNLOCK_KEY);
+    msgCache = [];
+    clearInterval(msgTimer);
     updateAccountBar();
     renderTimetableSwitcher();
     renderAuth('login');
@@ -3716,10 +3729,359 @@ function doLogout() {
     updateAccountBar();
     await loadCalendarFromCloud();
     await loadAccountData();
+    startMsgPolling();
   } else {
     renderUnlock();
   }
 })();
+
+/* ================================================================
+   💬 留言板（v2.4.0）
+   - 管理员可给任何注册用户留言并查看其课表（只读）
+   - 普通用户可回复收到的留言，也可给管理员发新留言
+================================================================ */
+const ADMIN_EMAILS = ['2214077724@qq.com', '3057278447@qq.com'];
+const isAdminUser = () => !!(currentUser && ADMIN_EMAILS.includes(String(currentUser.email || '').toLowerCase()));
+
+let msgCache = [];          // 与我相关的所有留言
+let msgTimer = null;        // 未读轮询
+let msgThreadPeer = null;   // 当前会话对象 {id, email}
+
+async function loadMessages(silent) {
+  if (!sb || !currentUser) return;
+  try {
+    const { data, error } = await sb.from('messages').select('*').order('created_at', { ascending: true });
+    if (error) { if (!silent) showToast('⚠️ 留言读取失败：' + error.message); return; }
+    msgCache = data || [];
+    updateMsgBadge();
+  } catch (e) { /* 静默 */ }
+}
+
+function updateMsgBadge() {
+  const btn = document.getElementById('msgBoardBtn');
+  if (!btn) return;
+  const n = currentUser ? msgCache.filter(m => m.recipient_id === currentUser.id && !m.is_read).length : 0;
+  btn.textContent = n > 0 ? `💬 留言板（${n}）` : '💬 留言板';
+}
+
+function startMsgPolling() {
+  clearInterval(msgTimer);
+  if (!sb || !currentUser) return;
+  loadMessages(true);
+  msgTimer = setInterval(() => loadMessages(true), 60000);
+}
+
+// 按会话对象分组：[{peer, last, unread, count}]
+function msgConversations() {
+  if (!currentUser) return [];
+  const map = new Map();
+  for (const m of msgCache) {
+    const mine = m.sender_id === currentUser.id;
+    const peer = { id: mine ? m.recipient_id : m.sender_id, email: mine ? (m.recipient_email || '（已注销）') : (m.sender_email || '（未知用户）') };
+    if (!map.has(peer.id)) map.set(peer.id, { peer, last: m, unread: 0, count: 0 });
+    const c = map.get(peer.id);
+    c.count++;
+    if ((m.created_at || '') >= (c.last.created_at || '')) c.last = m;
+    if (!mine && !m.is_read) c.unread++;
+  }
+  return [...map.values()].sort((a, b) => (b.last.created_at || '').localeCompare(a.last.created_at || ''));
+}
+
+function fmtMsgTime(t) {
+  if (!t) return '';
+  const d = new Date(t);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const sameDay = new Date(d); sameDay.setHours(0, 0, 0, 0);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (sameDay.getTime() === today.getTime()) return hm;
+  if (sameDay.getTime() === today.getTime() - 86400000) return '昨天 ' + hm;
+  return `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
+function openMessageBoard() {
+  if (!sb || !currentUser) { showToast('请先登录后再使用留言板'); return; }
+  const old = document.getElementById('msgBoardModal');
+  if (old) old.remove();
+  const modal = document.createElement('div');
+  modal.id = 'msgBoardModal';
+  modal.className = 'modal-overlay';
+  modal.setAttribute('style', 'display:flex; z-index:99999; position:fixed; inset:0; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; padding:16px;');
+  modal.innerHTML = `
+    <div style="background:#fff; border-radius:14px; width:100%; max-width:520px; height:82vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,0.3);">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid #eee; flex-shrink:0;">
+        <h3 id="msgTitle" style="margin:0; font-size:17px; cursor:pointer;">💬 留言板</h3>
+        <button id="msgClose" style="background:none; border:none; font-size:20px; cursor:pointer; color:#888;">✕</button>
+      </div>
+      <div id="msgListView" style="flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:8px; -webkit-overflow-scrolling:touch;"></div>
+      <div id="msgThreadView" style="flex:1; overflow:hidden; display:none; flex-direction:column;">
+        <div id="msgThreadList" style="flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:8px; background:#f7f8fc; -webkit-overflow-scrolling:touch;"></div>
+        <div style="display:flex; gap:8px; padding:10px 12px; border-top:1px solid #eee; flex-shrink:0;">
+          <input id="msgReplyInput" type="text" placeholder="输入留言内容..." style="flex:1; padding:10px 12px; font-size:15px; border:1px solid #dfe2eb; border-radius:10px; outline:none;" />
+          <button id="msgSendBtn" style="padding:10px 18px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer;">发送</button>
+        </div>
+      </div>
+      <div id="msgFooter" style="padding:10px 14px; border-top:1px solid #eee; display:flex; gap:8px; flex-wrap:wrap; flex-shrink:0;"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('msgClose').onclick = () => modal.remove();
+  // 点击标题返回会话列表
+  document.getElementById('msgTitle').onclick = () => showMsgList();
+  showMsgList();
+  loadMessages().then(() => { if (document.getElementById('msgBoardModal')) showMsgList(); });
+}
+
+// 会话列表视图
+function showMsgList() {
+  msgThreadPeer = null;
+  const listView = document.getElementById('msgListView');
+  const threadView = document.getElementById('msgThreadView');
+  const footer = document.getElementById('msgFooter');
+  if (!listView || !threadView) return;
+  document.getElementById('msgTitle').textContent = '💬 留言板';
+  threadView.style.display = 'none';
+  listView.style.display = 'flex';
+  footer.style.display = 'flex';
+
+  const convs = msgConversations();
+  if (convs.length === 0) {
+    listView.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:28px 10px;">暂无留言${isAdminUser() ? '<br><br>点击下方「✉️ 写新留言」给其他用户发送第一条留言吧' : '<br><br>管理员给你留言后会显示在这里'}</div>`;
+  } else {
+    listView.innerHTML = convs.map(c => {
+      const mine = c.last.sender_id === currentUser.id;
+      const preview = escapeHtml(String(c.last.content || '').slice(0, 40)) + (String(c.last.content || '').length > 40 ? '…' : '');
+      return `
+        <div class="msg-conv-item" data-uid="${c.peer.id}" style="display:flex; align-items:center; gap:10px; padding:12px; border:1px solid #eceef5; border-radius:12px; cursor:pointer; background:#fff;">
+          <div style="width:40px; height:40px; border-radius:50%; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0;">${c.peer.email === currentUser.email ? '👑' : '👤'}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+              <span style="font-size:14px; font-weight:600; color:#2c3550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(c.peer.email)}${c.peer.email === currentUser.email ? '（我）' : ''}</span>
+              <span style="font-size:11px; color:#98a0b3; flex-shrink:0;">${fmtMsgTime(c.last.created_at)}</span>
+            </div>
+            <div style="font-size:12.5px; color:#7a8299; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${mine ? '我：' : ''}${preview}</div>
+          </div>
+          ${c.unread > 0 ? `<span style="background:#e74c3c; color:#fff; font-size:11px; min-width:20px; height:20px; border-radius:10px; display:flex; align-items:center; justify-content:center; padding:0 6px; flex-shrink:0;">${c.unread}</span>` : ''}
+        </div>`;
+    }).join('');
+    listView.querySelectorAll('.msg-conv-item').forEach(el => {
+      el.onclick = () => {
+        const peer = { id: el.dataset.uid, email: el.querySelector('span').textContent.replace(/（我）$/, '') };
+        openMsgThread(peer);
+      };
+    });
+  }
+
+  // 底部操作按钮
+  let footHtml = `<button id="msgRefreshBtn" style="padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">🔄 刷新</button>`;
+  if (isAdminUser()) {
+    footHtml += `<button id="msgNewBtn" style="flex:1; padding:9px 14px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;">✉️ 写新留言</button>
+      <button id="msgUsersBtn" style="flex:1; padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">👥 用户管理</button>`;
+  } else {
+    footHtml += `<button id="msgNewBtn" style="flex:1; padding:9px 14px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;">✉️ 联系管理员</button>`;
+  }
+  footer.innerHTML = footHtml;
+  document.getElementById('msgRefreshBtn').onclick = async () => { await loadMessages(); showMsgList(); };
+  document.getElementById('msgNewBtn').onclick = () => showMsgPicker();
+  const usersBtn = document.getElementById('msgUsersBtn');
+  if (usersBtn) usersBtn.onclick = () => showAdminUsers();
+}
+
+// 收件人选择视图（管理员 → 全部用户；普通用户 → 管理员）
+async function showMsgPicker() {
+  const listView = document.getElementById('msgListView');
+  const threadView = document.getElementById('msgThreadView');
+  const footer = document.getElementById('msgFooter');
+  if (!listView) return;
+  document.getElementById('msgTitle').textContent = '✉️ 选择收件人';
+  threadView.style.display = 'none';
+  listView.style.display = 'flex';
+  footer.style.display = 'none';
+  listView.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载中...</div>`;
+  let users = [];
+  try {
+    const { data, error } = isAdminUser()
+      ? await sb.rpc('list_all_users')
+      : await sb.rpc('list_admins');
+    if (error) { listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">加载失败：${escapeHtml(error.message)}</div>`; return; }
+    users = (data || []).filter(u => u.id !== currentUser.id);
+  } catch (e) {
+    listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">加载失败</div>`;
+    return;
+  }
+  if (users.length === 0) { listView.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">暂无可选收件人</div>`; return; }
+  listView.innerHTML = `<div style="font-size:12px; color:#98a0b3; margin-bottom:2px;">共 ${users.length} 人</div>` + users.map(u => `
+    <div class="msg-pick-item" data-uid="${u.id}" data-email="${escapeHtml(u.email || '')}" style="display:flex; align-items:center; gap:10px; padding:12px; border:1px solid #eceef5; border-radius:12px; cursor:pointer;">
+      <div style="width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;">👤</div>
+      <span style="font-size:14px; color:#2c3550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(u.email || '')}</span>
+    </div>`).join('');
+  listView.querySelectorAll('.msg-pick-item').forEach(el => {
+    el.onclick = () => openMsgThread({ id: el.dataset.uid, email: el.dataset.email });
+  });
+}
+
+// 会话视图
+function showMsgThread() {
+  const listView = document.getElementById('msgListView');
+  const threadView = document.getElementById('msgThreadView');
+  const footer = document.getElementById('msgFooter');
+  if (!listView || !threadView || !msgThreadPeer) return;
+  document.getElementById('msgTitle').textContent = '💬 ' + msgThreadPeer.email;
+  listView.style.display = 'none';
+  footer.style.display = 'none';
+  threadView.style.display = 'flex';
+  const list = document.getElementById('msgThreadList');
+  const msgs = msgCache.filter(m => (m.sender_id === msgThreadPeer.id && m.recipient_id === currentUser.id) || (m.sender_id === currentUser.id && m.recipient_id === msgThreadPeer.id));
+  if (msgs.length === 0) {
+    list.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">还没有留言，发送第一条吧</div>`;
+  } else {
+    list.innerHTML = msgs.map(m => {
+      const mine = m.sender_id === currentUser.id;
+      return `
+        <div style="display:flex; justify-content:${mine ? 'flex-end' : 'flex-start'};">
+          <div style="max-width:78%; background:${mine ? 'linear-gradient(135deg,#5a6fd6,#6a4f9e)' : '#fff'}; color:${mine ? '#fff' : '#2c3550'}; padding:9px 12px; border-radius:14px; ${mine ? 'border-bottom-right-radius:4px;' : 'border-bottom-left-radius:4px; border:1px solid #eceef5;'} font-size:14px; line-height:1.55; word-break:break-word; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+            ${escapeHtml(m.content)}
+            <div style="font-size:10.5px; margin-top:4px; opacity:0.7; text-align:right;">${fmtMsgTime(m.created_at)}</div>
+          </div>
+        </div>`;
+    }).join('');
+    requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
+  }
+}
+
+function openMsgThread(peer) {
+  msgThreadPeer = peer;
+  showMsgThread();
+  markThreadRead(peer.id);
+  const inp = document.getElementById('msgReplyInput');
+  if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 100); }
+}
+
+async function markThreadRead(peerId) {
+  if (!sb || !currentUser) return;
+  const unread = msgCache.filter(m => m.recipient_id === currentUser.id && m.sender_id === peerId && !m.is_read);
+  if (!unread.length) return;
+  try {
+    await sb.from('messages').update({ is_read: true }).in('id', unread.map(m => m.id));
+    unread.forEach(m => m.is_read = true);
+    updateMsgBadge();
+  } catch (e) { /* 静默 */ }
+}
+
+async function sendMsg() {
+  const inp = document.getElementById('msgReplyInput');
+  const btn = document.getElementById('msgSendBtn');
+  if (!inp || !msgThreadPeer) return;
+  const content = inp.value.trim();
+  if (!content) return;
+  btn.disabled = true;
+  btn.textContent = '发送中…';
+  try {
+    const { error } = await sb.from('messages').insert({
+      sender_id: currentUser.id, sender_email: currentUser.email,
+      recipient_id: msgThreadPeer.id, recipient_email: msgThreadPeer.email || '',
+      content
+    });
+    if (error) { showToast('⚠️ 发送失败：' + error.message); return; }
+    inp.value = '';
+    await loadMessages(true);
+    if (msgThreadPeer && document.getElementById('msgThreadView').style.display !== 'none') showMsgThread();
+    showToast('✅ 已发送');
+  } catch (e) {
+    showToast('⚠️ 发送异常：' + (e.message || e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '发送';
+  }
+}
+// 回车发送（动态元素，用事件委托绑定一次）
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target && e.target.id === 'msgReplyInput') { e.preventDefault(); sendMsg(); }
+});
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'msgSendBtn') sendMsg();
+});
+
+/* ---------- 👑 管理员：用户管理（查看所有注册账户 + 只读课表） ---------- */
+async function showAdminUsers() {
+  const listView = document.getElementById('msgListView');
+  const threadView = document.getElementById('msgThreadView');
+  const footer = document.getElementById('msgFooter');
+  if (!listView) return;
+  document.getElementById('msgTitle').textContent = '👥 用户管理';
+  threadView.style.display = 'none';
+  listView.style.display = 'flex';
+  footer.style.display = 'none';
+  listView.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载中...</div>`;
+  let users = [];
+  try {
+    const { data, error } = await sb.rpc('list_all_users');
+    if (error) { listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">加载失败：${escapeHtml(error.message)}<br><br>请先在 Supabase 执行 supabase_message_board.sql</div>`; return; }
+    users = data || [];
+  } catch (e) {
+    listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">加载失败</div>`;
+    return;
+  }
+  listView.innerHTML = `<div style="font-size:12px; color:#98a0b3;">共 ${users.length} 个注册账户</div>` + users.map(u => {
+    const isMe = u.id === currentUser.id;
+    return `
+      <div style="display:flex; align-items:center; gap:10px; padding:12px; border:1px solid #eceef5; border-radius:12px; flex-wrap:wrap;">
+        <div style="width:36px; height:36px; border-radius:50%; background:${isMe ? 'linear-gradient(135deg,#f6ad3c,#e8871e)' : 'linear-gradient(135deg,#5a6fd6,#6a4f9e)'}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;">${isMe ? '👑' : '👤'}</div>
+        <div style="flex:1; min-width:140px;">
+          <div style="font-size:14px; font-weight:600; color:#2c3550; word-break:break-all;">${escapeHtml(u.email || '')}${isMe ? '（我）' : ''}</div>
+          <div style="font-size:11.5px; color:#98a0b3; margin-top:2px;">注册于 ${u.created_at ? new Date(u.created_at).toLocaleDateString('zh-CN') : '—'}</div>
+        </div>
+        <button class="au-msg" data-uid="${u.id}" data-email="${escapeHtml(u.email || '')}" style="padding:7px 12px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:9px; font-size:12.5px; cursor:pointer;">💬 留言</button>
+        <button class="au-tt" data-uid="${u.id}" data-email="${escapeHtml(u.email || '')}" style="padding:7px 12px; border:1px solid #dfe2eb; background:#fff; border-radius:9px; font-size:12.5px; cursor:pointer;">📚 查看课表</button>
+      </div>`;
+  }).join('');
+  listView.querySelectorAll('.au-msg').forEach(el => {
+    el.onclick = () => openMsgThread({ id: el.dataset.uid, email: el.dataset.email });
+  });
+  listView.querySelectorAll('.au-tt').forEach(el => {
+    el.onclick = () => adminViewUserTimetables({ id: el.dataset.uid, email: el.dataset.email });
+  });
+}
+
+async function adminViewUserTimetables(user) {
+  const listView = document.getElementById('msgListView');
+  if (!listView) return;
+  document.getElementById('msgTitle').textContent = '📚 ' + user.email;
+  listView.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载课表中...</div>`;
+  let tts = [];
+  try {
+    const { data, error } = await sb.from('timetables').select('id,name,data,saved_at,updated_at').eq('user_id', user.id).order('updated_at', { ascending: false });
+    if (error) { listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">读取失败：${escapeHtml(error.message)}</div>`; return; }
+    tts = data || [];
+  } catch (e) {
+    listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">读取失败</div>`;
+    return;
+  }
+  if (tts.length === 0) { listView.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">该账户暂无课表</div>`; return; }
+  const renderTT = (tt) => {
+    const courses = (tt.data && tt.data.courses) || [];
+    const events = (tt.data && tt.data.events) || [];
+    const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    const dayCols = days.map((d, i) => {
+      const list = courses.filter(c => Number(c.weekday) === i + 1).sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+      const items = list.map(c => `
+        <div style="background:#eef0fb; border-left:3px solid #6a5acd; border-radius:6px; padding:5px 7px; margin-bottom:4px;">
+          <div style="font-size:12px; font-weight:600; color:#2c3550; word-break:break-all;">${escapeHtml(c.name || '')}</div>
+          <div style="font-size:11px; color:#7a8299; margin-top:1px;">${escapeHtml(c.start || '')}-${escapeHtml(c.end || '')}${c.location ? ' · ' + escapeHtml(c.location) : ''}</div>
+        </div>`).join('');
+      return `<div style="flex:1; min-width:86px;"><div style="font-size:12px; font-weight:700; color:#6a5acd; margin-bottom:5px;">${d}</div>${items || '<div style="font-size:11px; color:#c3c8d6;">—</div>'}</div>`;
+    }).join('');
+    const evList = events.length ? events.map(ev => `
+      <div style="font-size:12px; color:#2c3550; padding:4px 0; border-bottom:1px dashed #eceef5;">📌 ${escapeHtml(ev.name || ev.title || '')} ${ev.date ? '（' + escapeHtml(ev.date) + '）' : ''} ${ev.start ? escapeHtml(ev.start) : ''}</div>`).join('') : '';
+    return `
+      <div style="border:1px solid #eceef5; border-radius:12px; padding:12px; background:#fff;">
+        <div style="font-size:14px; font-weight:700; color:#2c3550; margin-bottom:8px;">📕 ${escapeHtml(tt.name || '未命名课表')}</div>
+        <div style="display:flex; gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch;">${dayCols}</div>
+        ${evList ? `<div style="margin-top:10px;"><div style="font-size:12px; font-weight:700; color:#e8871e; margin-bottom:3px;">📅 考试 / 事项</div>${evList}</div>` : ''}
+      </div>`;
+  };
+  listView.innerHTML = tts.map(renderTT).join('');
+}
 
 /* ================================================================
    开屏动画隐藏（三重保险：DOMContentLoaded / load / 兜底超时）

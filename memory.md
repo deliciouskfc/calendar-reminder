@@ -126,4 +126,5 @@
 - v1.5.0 (09-08)：**跨设备课件云同步**（GitHub 仓库 cloud-files/ 存储，见"三、数据模型"）
 - v1.5.1 (09-08)：课表主界面一键「☁️ 云同步」按钮
 - v1.6.0 (09-08)：**应用密码锁**（两页通用）：`calendar_pw_hash`（SHA-256 hex，`sha256Hex()`，非安全上下文有 djb2 兜底 'fb' 前缀）+ `calendar_unlocked`（sessionStorage 会话免锁）。`initLock()` IIFE 同步启动（body 顶部静态 #lockOverlay + script 末尾渲染）：无 hash → setup 模式（两输入框，两遍校验 + 最少 4 位）；有 hash 且会话未解锁 → unlock 模式（单输入框 + 忘记密码重置链接，双 confirm 后 localStorage.clear()+IDB 删除+reload）。锁屏渐变背景 #4f8ef7→#6a4f9e
-- 当前版本：v1.6.0 / versionCode 13 / sw cache calendar-v13
+- v2.4.0 (09-08)：**留言板**（Supabase `messages` 表 + RLS，见 supabase_message_board.sql）：管理员（2214077724@qq.com / 3057278447@qq.com，`is_admin()` security definer 按 auth.users 邮箱判断）可给任何用户留言、通过 `list_all_users()` RPC 查看所有注册账户及只读课表（timetables/user_settings 加管理员 select 策略）；普通用户可回复 + `list_admins()` 联系管理员；未读角标 60s 轮询；入口在「☰ 更多」菜单
+- 当前版本：v2.4.0 / versionCode 30 / sw cache calendar-v30
