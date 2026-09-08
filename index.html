@@ -1187,8 +1187,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.5.1';
-const APP_VERSION_CODE = 33;
+const APP_VERSION = '2.6.0';
+const APP_VERSION_CODE = 34;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1222,6 +1222,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.6.0', date: '2026-09-08', items: [
+    '我发出的留言显示「已读 / 未读」状态（绿色 = 对方已看）',
+    '打开会话或会话停留时，收到的新留言自动标记已读，红点即时消失'
+  ]},
   { version: 'v2.5.1', date: '2026-09-08', items: [
     '发送留言后气泡立即显示（即使网络异常也先本地显示，稍后自动校正）'
   ]},
@@ -3245,6 +3249,12 @@ async function loadMessages(silent) {
     }
     msgCache = data || [];
     updateMsgBadge();
+    // 会话窗口正开着时：刷新显示（已读状态实时更新）+ 新收到的留言自动标记已读（红点即时消失）
+    const tv = document.getElementById('msgThreadView');
+    if (msgThreadPeer && tv && tv.style.display !== 'none') {
+      showMsgThread();
+      markThreadRead(msgThreadPeer.id);
+    }
   } catch (e) { /* 静默 */ }
 }
 
@@ -3429,6 +3439,7 @@ function showMsgThread() {
   footer.style.display = 'none';
   threadView.style.display = 'flex';
   const list = document.getElementById('msgThreadList');
+  const stick = (list.scrollHeight - list.scrollTop - list.clientHeight) < 80;
   const msgs = msgCache.filter(m => (m.sender_id === msgThreadPeer.id && m.recipient_id === currentUser.id) || (m.sender_id === currentUser.id && m.recipient_id === msgThreadPeer.id));
   if (msgs.length === 0) {
     list.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">还没有留言，发送第一条吧</div>`;
@@ -3439,11 +3450,11 @@ function showMsgThread() {
         <div style="display:flex; justify-content:${mine ? 'flex-end' : 'flex-start'};">
           <div style="max-width:78%; background:${mine ? 'linear-gradient(135deg,#5a6fd6,#6a4f9e)' : '#fff'}; color:${mine ? '#fff' : '#2c3550'}; padding:9px 12px; border-radius:14px; ${mine ? 'border-bottom-right-radius:4px;' : 'border-bottom-left-radius:4px; border:1px solid #eceef5;'} font-size:14px; line-height:1.55; word-break:break-word; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
             ${escapeHtml(m.content)}
-            <div style="font-size:10.5px; margin-top:4px; opacity:0.7; text-align:right;">${fmtMsgTime(m.created_at)}</div>
+            <div style="font-size:10.5px; margin-top:4px; opacity:0.8; text-align:right;">${fmtMsgTime(m.created_at)}${mine ? (m.is_read ? ' · <span style="color:#9dffc0; font-weight:600;">已读</span>' : ' · 未读') : ''}</div>
           </div>
         </div>`;
     }).join('');
-    requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
+    requestAnimationFrame(() => { if (stick) list.scrollTop = list.scrollHeight; });
   }
 }
 
