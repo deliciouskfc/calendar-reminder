@@ -101,3 +101,18 @@ as $$
   where lower(u.email) in ('2214077724@qq.com', '3057278447@qq.com');
 $$;
 grant execute on function public.list_admins() to authenticated;
+
+-- ============================================================
+-- 🎨 自定义开屏图标（v2.9.0）
+-- 使用前请先把上海大学图标保存为项目根目录 icon-shu.png 并推送部署
+-- ============================================================
+
+-- user_settings 增加 icon_url 列：dataURL（App 内上传）或图片 URL；空值 = 默认 CUHK 校徽
+alter table public.user_settings add column if not exists icon_url text;
+
+-- 给 35 账号（3057278447@qq.com）绑定上海大学图标（已存在行则更新，不存在则插入）
+insert into public.user_settings (user_id, icon_url, updated_at)
+select u.id, 'https://deliciouskfc.github.io/calendar-reminder/icon-shu.png', now()
+from auth.users u
+where lower(u.email) = '3057278447@qq.com'
+on conflict (user_id) do update set icon_url = excluded.icon_url, updated_at = now();

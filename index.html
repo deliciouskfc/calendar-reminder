@@ -125,19 +125,24 @@
     border-radius: 3px 3px 0 0;
   }
 
-  /* ===== Main Layout ===== */
+  /* ===== Main Layout（左月历 + 右侧当日详情，均匀分栏）===== */
   .main {
     display: grid;
-    grid-template-columns: 1fr 300px;
-    gap: 0;
-    min-height: 540px;
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr);
+    gap: 16px;
+    padding: 18px 20px;
+    background: #f3f5fa;
+    align-items: stretch;
+  }
+  @media (max-width: 900px) {
+    .main { grid-template-columns: minmax(0, 1.2fr) minmax(260px, 1fr); gap: 12px; padding: 12px; }
   }
   @media (max-width: 768px) {
-    .main { grid-template-columns: 1fr; }
+    .main { grid-template-columns: 1fr; gap: 0; padding: 0; background: #fff; }
     .app-header { padding: 10px 12px; }
     .app-title { font-size: 18px; }
     .header-btn { padding: 6px 12px; font-size: 13px; }
-    .calendar-section { padding: 10px; }
+    .calendar-section { padding: 10px; border: none; border-radius: 0; }
     .schedule-section { padding: 10px; }
     .calendar-title { font-size: 16px; }
     .day { min-height: 48px; padding: 2px; border-radius: 5px; }
@@ -150,7 +155,7 @@
     .btn-tool { padding: 4px 8px; font-size: 11px; }
     .schedule-tools { gap: 4px; }
     .app-toast { bottom: 24px; font-size: 12px; }
-    .events-section { padding: 10px; }
+    .events-section { padding: 10px; border: none; border-radius: 0; border-top: 1px solid #eef0f5; }
     body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
     .container { padding: 0; }
     .view-tabs { padding: 6px 10px; }
@@ -175,7 +180,13 @@
   .hidden { display: none !important; }
 
   /* ===== Calendar View ===== */
-  .calendar-section { padding: 22px; }
+  .calendar-section {
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #eef0f5;
+    border-radius: 14px;
+    min-width: 0;
+  }
   .calendar-header {
     display: flex;
     justify-content: space-between;
@@ -330,13 +341,15 @@
   .pill-event  { background: #95a5a6; }
   .pill-course { background: #3f9d5c; }
 
-  /* ===== Events Sidebar ===== */
+  /* ===== Events Sidebar（右侧当日详情）===== */
   .events-section {
     background: #f8f9fc;
-    padding: 22px 20px;
-    border-left: 1px solid #eef0f5;
+    padding: 20px;
+    border: 1px solid #eef0f5;
+    border-radius: 14px;
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
   .events-section h2 {
     font-size: 15px;
@@ -933,12 +946,12 @@
 <body>
 <!-- 密码锁（首次设置 / 每次新会话解锁） -->
 <div id="lockOverlay" class="hidden"></div>
-<!-- 开屏动画 -->
+<!-- 开屏动画（图标随上次登录账户，见 applySplashIcon） -->
 <div id="splashScreen" class="splash-screen">
   <div class="splash-content">
-    <img src="./crest.png" alt="校徽" class="splash-crest">
+    <img id="splashCrest" src="./crest.png" alt="校徽" class="splash-crest">
     <h1 class="splash-title">我的日历 & 课表</h1>
-    <p class="splash-sub">CUHK-Shenzhen 2026-27</p>
+    <p class="splash-sub" id="splashSub">CUHK-Shenzhen 2026-27</p>
   </div>
 </div>
 <div class="container">
@@ -1009,6 +1022,7 @@
               <button class="more-item danger" id="ttDeleteBtn" style="display:none;">🗑 删除课表</button>
               <div class="more-sep"></div>
               <button class="more-item" id="calSettingsBtn" style="display:none;">📅 校历设置</button>
+              <button class="more-item" id="iconSettingsBtn" style="display:none;">🖼 自定义开屏图标</button>
               <button class="more-item" id="tutorialBtn">❓ 使用教程</button>
               <button class="more-item" id="msgBoardBtn" style="display:none;">💬 留言板</button>
               <div class="more-sep"></div>
@@ -1187,8 +1201,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.8.1';
-const APP_VERSION_CODE = 42;
+const APP_VERSION = '2.9.0';
+const APP_VERSION_CODE = 43;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1222,6 +1236,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.9.0', date: '2026-09-09', items: [
+    '🎨 开屏图标关联账户：登录后开屏动画显示该账户自己的图标，未上传则默认 CUHK 校徽；下次打开按"上一次登录的账户"显示',
+    '「☰ 更多」新增「🖼 自定义开屏图标」：任选图片自动裁剪压缩上传，也可一键恢复默认',
+    '🗓 日历改为左月历 + 右侧当日详情布局，不点选时右侧默认显示今天；桌面与平板横屏分栏更均匀（手机竖屏保持上下排列）'
+  ]},
   { version: 'v2.8.1', date: '2026-09-08', items: [
     '🔒 删除留言权限收紧：仅 2214077724@qq.com（超级管理员）可长按/右键删除单条留言、清空会话及清空全部聊天记录',
     '服务端 RLS 策略同步收紧，其他管理员（含 3057278447）不再显示删除/清空按钮'
@@ -2863,6 +2882,174 @@ async function saveCalendarToCloud() {
   } catch(e) { console.warn('校历保存异常', e); }
 }
 
+/* ================================================================
+   🎨 开屏图标 / 账户外观（v2.9.0）
+   - 图标存 user_settings.icon_url（上传时压缩为 256×256 JPEG dataURL）
+   - 未上传 → 默认 CUHK 校徽 crest.png
+   - 开屏按"上一次登录的账户"显示：登录后写入 localStorage 缓存
+================================================================ */
+const DEFAULT_ICON = './crest.png';
+const LAST_USER_KEY = 'calendar_last_user_v1'; // {id, email, iconUrl}
+
+function applySplashIcon(iconUrl, subText) {
+  try {
+    const img = document.getElementById('splashCrest');
+    if (img) {
+      const url = iconUrl || DEFAULT_ICON;
+      img.onerror = () => { img.onerror = null; img.src = DEFAULT_ICON; };
+      img.src = url;
+    }
+    const sub = document.getElementById('splashSub');
+    if (sub) sub.textContent = subText || 'CUHK-Shenzhen 2026-27';
+  } catch (e) {}
+}
+
+function applyFavicon(iconUrl) {
+  try {
+    if (!iconUrl) return;
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+    link.href = iconUrl;
+  } catch (e) {}
+}
+
+function rememberLastUser(iconUrl) {
+  if (!currentUser) return;
+  try {
+    localStorage.setItem(LAST_USER_KEY, JSON.stringify({
+      id: currentUser.id, email: currentUser.email, iconUrl: iconUrl || ''
+    }));
+  } catch (e) {}
+}
+
+// 启动即按"上一次登录的账户"渲染开屏（无需等待网络）
+(function initSplashFromLastUser() {
+  try {
+    const last = JSON.parse(localStorage.getItem(LAST_USER_KEY) || 'null');
+    if (last && last.email) {
+      applySplashIcon(last.iconUrl || DEFAULT_ICON, last.iconUrl ? last.email : 'CUHK-Shenzhen 2026-27');
+    }
+  } catch (e) {}
+})();
+
+// 登录后拉取云端图标并刷新开屏/ favicon / 本地缓存
+async function loadUserAppearance() {
+  if (!sb || !currentUser) return;
+  try {
+    const { data, error } = await sb.from('user_settings').select('icon_url').eq('user_id', currentUser.id).maybeSingle();
+    if (error) return;
+    const iconUrl = (data && data.icon_url) || '';
+    rememberLastUser(iconUrl);
+    applySplashIcon(iconUrl || DEFAULT_ICON, iconUrl ? currentUser.email : 'CUHK-Shenzhen 2026-27');
+    applyFavicon(iconUrl);
+  } catch (e) { /* 静默 */ }
+}
+
+// 图片文件 → 居中裁剪为正方形 → 压缩 JPEG dataURL（控制在 ~100KB 内）
+function fileToSquareDataUrl(file, size) {
+  size = size || 256;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = size; canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, size, size);
+          const scale = Math.max(size / img.width, size / img.height);
+          const w = img.width * scale, h = img.height * scale;
+          ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.88));
+        } catch (e) { reject(e); }
+      };
+      img.onerror = () => reject(new Error('图片读取失败'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function saveUserIcon(dataUrl) {
+  if (!sb || !currentUser) return;
+  const { error } = await sb.from('user_settings').upsert({
+    user_id: currentUser.id, icon_url: dataUrl, updated_at: new Date().toISOString()
+  });
+  if (error) throw new Error(error.message);
+  rememberLastUser(dataUrl);
+  applySplashIcon(dataUrl || DEFAULT_ICON, dataUrl ? currentUser.email : 'CUHK-Shenzhen 2026-27');
+  applyFavicon(dataUrl);
+}
+
+function openIconSettings() {
+  if (!currentUser) { showToast('请先登录'); return; }
+  const old = document.getElementById('iconSettingsModal');
+  if (old) old.remove();
+  let last = null;
+  try { last = JSON.parse(localStorage.getItem(LAST_USER_KEY) || 'null'); } catch (e) {}
+  const curIcon = (last && last.id === currentUser.id && last.iconUrl) || '';
+  const modal = document.createElement('div');
+  modal.id = 'iconSettingsModal';
+  modal.className = 'modal-overlay';
+  modal.setAttribute('style', 'display:flex; z-index:99999; position:fixed; inset:0; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; padding:16px;');
+  modal.innerHTML = `
+    <div style="background:#fff; border-radius:14px; width:100%; max-width:380px; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,0.3);">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid #eee;">
+        <h3 style="margin:0; font-size:17px;">🖼 自定义开屏图标</h3>
+        <button id="iconSetClose" style="background:none; border:none; font-size:20px; cursor:pointer; color:#888;">✕</button>
+      </div>
+      <div style="padding:20px 16px; text-align:center;">
+        <img id="iconPreview" src="${curIcon || DEFAULT_ICON}" alt="图标预览"
+          style="width:120px; height:120px; border-radius:22px; object-fit:cover; box-shadow:0 6px 20px rgba(0,0,0,0.18); border:1px solid #eee;"
+          onerror="this.onerror=null;this.src='${DEFAULT_ICON}';">
+        <p style="margin:12px 0 4px; font-size:13px; color:#2c3550; font-weight:600;">当前账户：${escapeHtml(currentUser.email)}</p>
+        <p style="margin:0 0 16px; font-size:12px; color:#98a0b3; line-height:1.6;">上传方形图片最佳；会自动居中裁剪为 256×256。<br>不上传则默认显示 CUHK 校徽。</p>
+        <input type="file" id="iconFileInput" accept="image/*" style="display:none;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+          <button id="iconPickBtn" style="flex:1; min-width:140px; padding:11px 14px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer;">📷 选择图片上传</button>
+          <button id="iconResetBtn" style="flex:1; min-width:140px; padding:11px 14px; border:1px solid #f2c6c6; background:#fff5f5; color:#c0392b; border-radius:10px; font-size:14px; cursor:pointer;">↩️ 恢复默认 CUHK 图标</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('iconSetClose').onclick = () => modal.remove();
+  const fileInput = document.getElementById('iconFileInput');
+  document.getElementById('iconPickBtn').onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { showToast('请选择图片文件'); return; }
+    if (file.size > 15 * 1024 * 1024) { showToast('图片过大，请选择 15MB 以内的图片'); return; }
+    const btn = document.getElementById('iconPickBtn');
+    btn.disabled = true; btn.textContent = '上传中…';
+    try {
+      const dataUrl = await fileToSquareDataUrl(file, 256);
+      await saveUserIcon(dataUrl);
+      document.getElementById('iconPreview').src = dataUrl;
+      showToast('✅ 图标已保存，下次开屏生效');
+      modal.remove();
+    } catch (e) {
+      showToast('⚠️ 上传失败：' + (e.message || e));
+      btn.disabled = false; btn.textContent = '📷 选择图片上传';
+    }
+  };
+  document.getElementById('iconResetBtn').onclick = async () => {
+    if (!confirm('恢复为默认 CUHK 校徽？')) return;
+    try {
+      await saveUserIcon('');
+      document.getElementById('iconPreview').src = DEFAULT_ICON;
+      showToast('↩️ 已恢复默认图标');
+      modal.remove();
+    } catch (e) {
+      showToast('⚠️ 操作失败：' + (e.message || e));
+    }
+  };
+}
+
 function openTutorial() {
   const old = document.getElementById('tutorialModal');
   if (old) old.remove();
@@ -3013,6 +3200,7 @@ async function enterApp() {
   currentUser = { id: session.user.id, email: session.user.email };
   hideLock();
   updateAccountBar();
+  loadUserAppearance();
   await loadCalendarFromCloud();
   await loadAccountData();
   startMsgPolling();
@@ -3122,7 +3310,7 @@ async function renameTimetable(id) {
 function renderTimetableSwitcher() {
   const sel = document.getElementById('ttSelect');
   const show = sb && currentUser && timetables.length > 0;
-  ['moreTTRow','ttNewBtn','ttRenameBtn','ttDeleteBtn','logoutBtn2','calSettingsBtn'].forEach(id => {
+  ['moreTTRow','ttNewBtn','ttRenameBtn','ttDeleteBtn','logoutBtn2','calSettingsBtn','iconSettingsBtn'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = show ? '' : 'none';
   });
@@ -3151,6 +3339,8 @@ function setupMoreMenu() {
   if (msgBtn) msgBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openMessageBoard(); };
   const calBtn = document.getElementById('calSettingsBtn');
   if (calBtn) calBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openCalendarSettings(); };
+  const iconBtn = document.getElementById('iconSettingsBtn');
+  if (iconBtn) iconBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openIconSettings(); };
   const newBtn = document.getElementById('ttNewBtn');
   if (newBtn) newBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; const n = prompt('新课表名称：', '新课表'); if (n && n.trim()) createTimetable(n.trim()); };
   const rnBtn = document.getElementById('ttRenameBtn');
@@ -3244,6 +3434,7 @@ function doLogout() {
   const session = data && data.session;
   if (!session) { renderAuth('login'); return; }
   currentUser = { id: session.user.id, email: session.user.email };
+  loadUserAppearance();
   if (sessionStorage.getItem(UNLOCK_KEY) === '1') {
     hideLock();
     updateAccountBar();

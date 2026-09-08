@@ -1,7 +1,7 @@
 {
-  "version": "2.8.1",
-  "versionCode": 42,
+  "version": "2.9.0",
+  "versionCode": 43,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "删除留言权限收紧：仅 2214077724@qq.com 可长按/右键删除单条留言、清空会话及清空全部聊天记录",
+  "updateLog": "开屏图标关联账户：登录后按上次登录账户显示自定义开屏图标，可在「更多」中上传，未上传默认 CUHK 校徽；日历改为左月历右当日详情布局",
   "forceUpdate": false
 }
