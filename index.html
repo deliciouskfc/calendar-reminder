@@ -546,6 +546,27 @@
   .btn-tool:hover { background: #f0f2fa; border-color: #5a6fd6; }
   .btn-tool.danger { color: #e74c3c; }
   .btn-tool.danger:hover { background: #fdf0ef; border-color: #e74c3c; }
+  /* ===== 退课列表 ===== */
+  .drop-list { max-height: 46vh; overflow-y: auto; }
+  .drop-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-bottom: 1px solid #f0f0f5;
+    cursor: pointer; transition: background 0.12s;
+  }
+  .drop-item:hover { background: #f8f9fc; }
+  .drop-item:last-child { border-bottom: none; }
+  .drop-checkbox {
+    width: 20px; height: 20px; border: 2px solid #d5d9e2;
+    border-radius: 5px; display: flex; align-items: center;
+    justify-content: center; flex-shrink: 0; transition: all 0.12s;
+  }
+  .drop-item.checked .drop-checkbox {
+    background: #e74c3c; border-color: #e74c3c; color: #fff;
+  }
+  .drop-item.checked .drop-checkbox::after { content: '✓'; font-size: 13px; font-weight: 700; }
+  .drop-info { flex: 1; min-width: 0; }
+  .drop-name { font-size: 13px; font-weight: 600; color: #2c3e50; }
+  .drop-meta { font-size: 11px; color: #95a5a6; margin-top: 1px; }
   /* ===== Toast 提示 ===== */
   .app-toast {
     position: fixed; left: 50%; bottom: 48px;
@@ -851,8 +872,8 @@
       <div class="schedule-header">
         <div class="schedule-title">📚 每周课程表</div>
         <div class="schedule-tools">
-          <button class="btn-tool danger" id="clearCoursesBtn">🗑 一键退课</button>
-          <button class="btn-tool" id="restoreCoursesBtn">➕ 一键加课</button>
+          <button class="btn-tool danger" id="clearCoursesBtn">🗑 退课</button>
+          <button class="btn-tool" id="restoreCoursesBtn">➕ 加课</button>
         </div>
         <div class="schedule-nav">
           <button class="nav-btn" id="schPrevBtn">‹</button>
@@ -939,6 +960,74 @@
 <!-- 课程/事件操作弹出菜单 -->
 <div class="popup-menu" id="popupMenu" style="display:none;"></div>
 
+<!-- 退课弹窗 -->
+<div class="modal-overlay" id="dropOverlay">
+  <div class="modal">
+    <h3>🗑 退课 — 勾选要退掉的课程</h3>
+    <div class="drop-list" id="dropList"></div>
+    <div class="modal-actions">
+      <button class="btn" id="dropCancelBtn">取消</button>
+      <button class="btn btn-danger" id="dropConfirmBtn">退掉选中</button>
+    </div>
+  </div>
+</div>
+
+<!-- 加课弹窗 -->
+<div class="modal-overlay" id="addCourseOverlay">
+  <div class="modal">
+    <h3>➕ 新增课程</h3>
+    <div class="form-group">
+      <label>课程名称</label>
+      <input type="text" id="newCourseName" placeholder="例如：CSC 1001-L02">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>星期</label>
+        <select id="newCourseWeekday">
+          <option value="1">周一</option>
+          <option value="2">周二</option>
+          <option value="3">周三</option>
+          <option value="4">周四</option>
+          <option value="5">周五</option>
+          <option value="6">周六</option>
+          <option value="7">周日</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>类型</label>
+        <select id="newCourseType">
+          <option value="Lecture">Lecture</option>
+          <option value="Tutorial">Tutorial</option>
+          <option value="Lab">Lab</option>
+          <option value="Seminar">Seminar</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>开始时间</label>
+        <input type="time" id="newCourseStart" value="08:30">
+      </div>
+      <div class="form-group">
+        <label>结束时间</label>
+        <input type="time" id="newCourseEnd" value="10:20">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>地点</label>
+      <input type="text" id="newCourseLocation" placeholder="Teaching B 103">
+    </div>
+    <div class="form-group">
+      <label>教师</label>
+      <input type="text" id="newCourseInstructor" placeholder="T. LI">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="addCourseCancelBtn">取消</button>
+      <button class="btn btn-primary" id="addCourseSaveBtn">添加</button>
+    </div>
+  </div>
+</div>
+
 <!-- 更新日志弹窗 -->
 <div class="modal-overlay" id="changelogOverlay">
   <div class="modal">
@@ -954,8 +1043,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.2.0';
-const APP_VERSION_CODE = 4;
+const APP_VERSION = '1.3.0';
+const APP_VERSION_CODE = 5;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -973,6 +1062,12 @@ const WEEKDAY_COLS = ['一','二','三','四','五','六','日']; // 0=周一..6
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.3.0', date: '2026-09-08', items: [
+    '退课改为勾选列表，可选择退掉某几节课',
+    '加课改为填写表单（课名/星期/时间/地点/类型/教师），填完即同步到日历和课表',
+    '修复拖拽到空白时间点无法放下的 bug，现在可自由拖到任意空位完成可视化编辑',
+    '点击课程卡片弹出完整信息（名称/类型/时间/地点/教师），解决短课程显示不全的问题'
+  ]},
   { version: 'v1.2.0', date: '2026-09-08', items: [
     '新增课表课程拖拽换位：按住课程块拖到目标格即可移动；拖到已有课程的格子上则互换时间',
     '新增一键退课 / 一键加课，日历与课表同步更新',
@@ -1772,27 +1867,25 @@ function startCourseDrag(ev, course, block) {
     let applied = false;
     // 以最后一次 move 计算的目标为准（避免 pointerup 像素偏差导致放置失效）
     if (!cancelled && lastTarget) {
-      {
-        const oldWk = course.weekday, oldStart = course.start, oldEnd = course.end;
-        const changed = lastTarget.weekday !== oldWk || minutesToStr(lastTarget.newStart) !== oldStart;
-        if (changed) {
-          if (lastTarget.occupant) {
-            const occ = courses.find(c => c.id === lastTarget.occupant.id);
-            if (occ) {
-              occ.weekday = oldWk; occ.start = oldStart; occ.end = oldEnd;
-              course.weekday = lastTarget.weekday;
-              course.start = minutesToStr(lastTarget.newStart);
-              course.end = minutesToStr(lastTarget.newEnd);
-              showToast(`已交换 ${course.name} ↔ ${occ.name}`);
-              applied = true;
-            }
-          } else {
+      const oldWk = course.weekday, oldStart = course.start, oldEnd = course.end;
+      const changed = lastTarget.weekday !== oldWk || minutesToStr(lastTarget.newStart) !== oldStart;
+      if (changed) {
+        if (lastTarget.occupant) {
+          const occ = courses.find(c => c.id === lastTarget.occupant.id);
+          if (occ) {
+            occ.weekday = oldWk; occ.start = oldStart; occ.end = oldEnd;
             course.weekday = lastTarget.weekday;
             course.start = minutesToStr(lastTarget.newStart);
             course.end = minutesToStr(lastTarget.newEnd);
-            showToast(`已移动 ${course.name} → 周${WEEKDAY_COLS[t.col]} ${course.start}`);
+            showToast(`已交换 ${course.name} ↔ ${occ.name}`);
             applied = true;
           }
+        } else {
+          course.weekday = lastTarget.weekday;
+          course.start = minutesToStr(lastTarget.newStart);
+          course.end = minutesToStr(lastTarget.newEnd);
+          showToast(`已移动 ${course.name} → 周${WEEKDAY_COLS[lastTarget.col]} ${course.start}`);
+          applied = true;
         }
       }
     }
@@ -1880,12 +1973,20 @@ function showPopupCourseMenu(clickEvent, course) {
   clickEvent.stopPropagation();
   const menu = document.getElementById('popupMenu');
   const hasUrl = !!(course.url && course.url.trim());
+  const weekdayName = ['日','一','二','三','四','五','六'][course.weekday === 7 ? 0 : course.weekday];
   const urlLink = hasUrl
     ? `<div class="pm-item" data-act="openurl"><span class="pm-icon">🔗</span>打开课件</div>`
     : `<div class="pm-item" data-act="addurl"><span class="pm-icon">➕</span>添加课件链接</div>`;
 
   menu.innerHTML = `
-    <div style="padding:4px 12px 8px;font-size:12px;color:#95a5a6;">${escapeHtml(course.name)}</div>
+    <div style="padding:6px 12px 4px;font-size:14px;font-weight:700;color:#2c3e50;">${escapeHtml(course.name)}</div>
+    <div style="padding:0 12px 8px;font-size:11px;color:#95a5a6;line-height:1.6;">
+      <div>类型：${escapeHtml(course.type || 'Lecture')}</div>
+      <div>时间：周${weekdayName} ${course.start} - ${course.end}</div>
+      ${course.location ? `<div>地点：${escapeHtml(course.location)}</div>` : ''}
+      ${course.instructor ? `<div>教师：${escapeHtml(course.instructor)}</div>` : ''}
+      ${course.crn ? `<div>CRN：${escapeHtml(course.crn)}</div>` : ''}
+    </div>
     ${urlLink}
     <div class="pm-item" data-act="edit"><span class="pm-icon">✏️</span>编辑</div>
     <div class="pm-divider"></div>
@@ -2087,27 +2188,87 @@ document.getElementById('modalOverlay').onclick = (e) => {
 };
 
 /* ================================================================
-   一键退课 / 一键加课（日历与课表同步）
+   退课（勾选列表）/ 加课（填写表单）
 ================================================================ */
+const dropOverlay = document.getElementById('dropOverlay');
+const dropList = document.getElementById('dropList');
+let dropSelected = new Set();
+
+function renderDropList() {
+  dropSelected.clear();
+  const wdNames = ['日','一','二','三','四','五','六'];
+  if (courses.length === 0) {
+    dropList.innerHTML = '<div style="padding:24px;text-align:center;color:#95a5a6;">课表为空，没有可退的课程</div>';
+    return;
+  }
+  dropList.innerHTML = courses.map(c => {
+    const wd = c.weekday === 7 ? 0 : c.weekday;
+    return `<div class="drop-item" data-id="${c.id}">
+      <div class="drop-checkbox"></div>
+      <div class="drop-info">
+        <div class="drop-name">${escapeHtml(c.name)} <span style="font-size:10px;color:#95a5a6;font-weight:400;">${escapeHtml(c.type || '')}</span></div>
+        <div class="drop-meta">周${wdNames[wd]} ${c.start}-${c.end}${c.location ? ' · ' + escapeHtml(c.location) : ''}</div>
+      </div>
+    </div>`;
+  }).join('');
+  dropList.querySelectorAll('.drop-item').forEach(el => {
+    el.onclick = () => {
+      const id = el.dataset.id;
+      if (dropSelected.has(id)) { dropSelected.delete(id); el.classList.remove('checked'); }
+      else { dropSelected.add(id); el.classList.add('checked'); }
+    };
+  });
+}
+
 document.getElementById('clearCoursesBtn').onclick = () => {
   hidePopup();
-  if (courses.length === 0) { showToast('课表已经是空的'); return; }
-  if (!confirm(`确定退掉全部 ${courses.length} 节课？\n所有周的课程都会移除，之后可用"一键加课"恢复默认课表。`)) return;
-  courses = [];
+  renderDropList();
+  dropOverlay.classList.add('active');
+};
+document.getElementById('dropCancelBtn').onclick = () => dropOverlay.classList.remove('active');
+dropOverlay.onclick = (e) => { if (e.target === dropOverlay) dropOverlay.classList.remove('active'); };
+document.getElementById('dropConfirmBtn').onclick = () => {
+  if (dropSelected.size === 0) { showToast('请至少勾选一节课'); return; }
+  const count = dropSelected.size;
+  courses = courses.filter(c => !dropSelected.has(c.id));
   saveData();
   renderCalendar(); renderEventsList(); renderSchedule();
-  showToast('已退掉全部课程，日历与课表已同步');
+  dropOverlay.classList.remove('active');
+  showToast(`已退掉 ${count} 节课，日历与课表已同步`);
 };
+
+const addCourseOverlay = document.getElementById('addCourseOverlay');
 document.getElementById('restoreCoursesBtn').onclick = () => {
   hidePopup();
-  const existing = new Set(courses.map(c => c.id));
-  const missing = DEFAULT_COURSES.filter(c => !existing.has(c.id));
-  if (missing.length === 0) { showToast('默认课表已全部在课'); return; }
-  if (!confirm(`一键添加默认课表？\n将添加 ${missing.length} 节课（已有课程不受影响）。`)) return;
-  courses.push(...missing.map(c => ({ ...c })));
+  // 默认值
+  document.getElementById('newCourseName').value = '';
+  document.getElementById('newCourseWeekday').value = '1';
+  document.getElementById('newCourseType').value = 'Lecture';
+  document.getElementById('newCourseStart').value = '08:30';
+  document.getElementById('newCourseEnd').value = '10:20';
+  document.getElementById('newCourseLocation').value = '';
+  document.getElementById('newCourseInstructor').value = '';
+  addCourseOverlay.classList.add('active');
+  setTimeout(() => document.getElementById('newCourseName').focus(), 100);
+};
+document.getElementById('addCourseCancelBtn').onclick = () => addCourseOverlay.classList.remove('active');
+addCourseOverlay.onclick = (e) => { if (e.target === addCourseOverlay) addCourseOverlay.classList.remove('active'); };
+document.getElementById('addCourseSaveBtn').onclick = () => {
+  const name = document.getElementById('newCourseName').value.trim();
+  const weekday = parseInt(document.getElementById('newCourseWeekday').value, 10);
+  const type = document.getElementById('newCourseType').value;
+  const start = document.getElementById('newCourseStart').value;
+  const end = document.getElementById('newCourseEnd').value;
+  const location = document.getElementById('newCourseLocation').value.trim();
+  const instructor = document.getElementById('newCourseInstructor').value.trim();
+  if (!name) { showToast('请填写课程名称'); return; }
+  if (!start || !end) { showToast('请填写时间'); return; }
+  if (end <= start) { showToast('结束时间必须晚于开始时间'); return; }
+  courses.push({ id: uuid(), name, weekday, start, end, location, type, instructor, url: '' });
   saveData();
   renderCalendar(); renderEventsList(); renderSchedule();
-  showToast(`已添加 ${missing.length} 节课，日历与课表已同步`);
+  addCourseOverlay.classList.remove('active');
+  showToast(`已添加 ${name}，日历与课表已同步`);
 };
 
 /* ================================================================

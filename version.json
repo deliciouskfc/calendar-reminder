@@ -1,7 +1,7 @@
 {
-  "version": "1.2.0",
-  "versionCode": 4,
+  "version": "1.3.0",
+  "versionCode": 5,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "1. 新增课表课程拖拽换位（拖到空格移动，拖到已有课程则互换时间）\n2. 新增一键退课 / 一键加课，日历与课表同步更新\n3. 日历视图新增课程显示（绿色标签）\n4. 新增更新日志查看入口",
+  "updateLog": "1. 退课改为勾选列表，可选退掉某几节课\n2. 加课改为填写表单（课名/星期/时间/地点/类型/教师）\n3. 修复拖拽到空白时间点无法放下的 bug\n4. 点击课程卡片弹出完整信息，解决短课程显示不全",
   "forceUpdate": false
 }
