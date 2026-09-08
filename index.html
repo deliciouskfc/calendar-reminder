@@ -1187,8 +1187,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.6.2';
-const APP_VERSION_CODE = 36;
+const APP_VERSION = '2.7.0';
+const APP_VERSION_CODE = 37;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1222,6 +1222,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.7.0', date: '2026-09-08', items: [
+    '留言改为服务器实时推送（Supabase Realtime）：对方发送/已读即刻同步，无需等待轮询',
+    '修复退出留言板后气泡消失的问题',
+    '轮询降为兜底机制（留言板打开 3 秒 / 关闭 15 秒），需在 Supabase 执行 realtime SQL'
+  ]},
   { version: 'v2.6.2', date: '2026-09-08', items: [
     '修复发送后气泡短暂显示又消失的问题：改用纯写入模式，写库失败时气泡也不消失'
   ]},
@@ -3287,15 +3292,68 @@ function updateMsgBadge() {
 }
 
 function startMsgPolling(ms) {
-  msgPollMs = ms || 10000;
+  msgPollMs = ms || 15000;
+  setupMsgRealtime();
   clearInterval(msgTimer);
   if (!sb || !currentUser) return;
   loadMessages(true);
   msgTimer = setInterval(() => {
-    // 留言板已关闭时，从 1 秒快速轮询自动降回 10 秒
-    if (msgPollMs === 1000 && !document.getElementById('msgBoardModal')) { startMsgPolling(); return; }
+    // 留言板已关闭时，从 3 秒兜底轮询自动降回 15 秒（实时推送为主）
+    if (msgPollMs === 3000 && !document.getElementById('msgBoardModal')) { startMsgPolling(); return; }
     loadMessages(true);
   }, msgPollMs);
+}
+
+/* ---------- ⚡ 实时推送（Supabase Realtime）：留言变动服务器立即下发 ---------- */
+let msgChannel = null;
+let msgChannelUid = null;
+
+function setupMsgRealtime() {
+  if (!sb || !currentUser) return;
+  if (msgChannel && msgChannelUid === currentUser.id) return; // 当前用户已建立推送
+  try {
+    if (msgChannel) { sb.removeChannel(msgChannel); msgChannel = null; }
+    msgChannelUid = currentUser.id;
+    msgChannel = sb.channel('msg-board-' + currentUser.id.slice(0, 8))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' },
+        (payload) => { onMsgPush(payload); })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') loadMessages(true); // 订阅成功后校准一次全量数据
+      });
+  } catch (e) { /* 实时推送不可用时静默，轮询兜底 */ }
+}
+
+function onMsgPush(payload) {
+  try {
+    const me = currentUser ? currentUser.id : null;
+    if (!me) return;
+    if (payload.event === 'INSERT' && payload.new) {
+      const m = payload.new;
+      if (m.sender_id !== me && m.recipient_id !== me) return; // 与我无关的留言忽略
+      if (!msgCache.some(x => x.id === m.id)) {
+        // 移除被服务器记录替换的本地临时气泡，避免重复
+        msgCache = msgCache.filter(x => !(String(x.id).startsWith('local-') && x.sender_id === m.sender_id && x.content === m.content && Math.abs(new Date(x.created_at) - new Date(m.created_at)) < 300000));
+        msgCache.push(m);
+        msgCache.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+      }
+    } else if (payload.event === 'UPDATE' && payload.new) {
+      const idx = msgCache.findIndex(x => x.id === payload.new.id);
+      if (idx >= 0) msgCache[idx] = { ...msgCache[idx], ...payload.new };
+    } else if (payload.event === 'DELETE' && payload.old) {
+      msgCache = msgCache.filter(x => x.id !== payload.old.id);
+    } else { return; }
+    updateMsgBadge();
+    // 留言板正开着则实时刷新界面
+    if (document.getElementById('msgBoardModal')) {
+      const tv = document.getElementById('msgThreadView');
+      if (msgThreadPeer && tv && tv.style.display !== 'none') {
+        showMsgThread();
+        if (payload.event === 'INSERT') markThreadRead(msgThreadPeer.id);
+      } else {
+        showMsgList();
+      }
+    }
+  } catch (e) { /* 静默 */ }
 }
 
 // 按会话对象分组：[{peer, last, unread, count}]
@@ -3357,7 +3415,7 @@ function openMessageBoard() {
   document.getElementById('msgTitle').onclick = () => showMsgList();
   // 每次打开都实时拉取最新留言
   document.getElementById('msgListView').innerHTML = '<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载中...</div>';
-  startMsgPolling(1000); // 留言板打开期间 1 秒快速轮询
+  startMsgPolling(3000); // 留言板打开期间 3 秒兜底轮询（实时推送为主）
   loadMessages().then(() => { if (document.getElementById('msgBoardModal')) showMsgList(); });
 }
 
