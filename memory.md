@@ -2,15 +2,16 @@
 
 > 目的：记录本项目所有实现方式。新会话先读本文件，避免重复探索代码。
 > **每次改完代码必须顺手更新本文件**（变更点 + 行号区间 + 版本号）。
-> 最后更新：v1.6.0（应用密码锁）。
+> 最后更新：v2.2.0（校历云端化 + 每账户自定义节假日）。
 
 ## 一、项目概览
-- 纯静态 PWA 课程表/日历提醒应用，**无后端**，部署 GitHub Pages：https://deliciouskfc.github.io/calendar-reminder/
+- 纯静态 PWA 课程表/日历提醒应用，部署 GitHub Pages：https://deliciouskfc.github.io/calendar-reminder/
 - git push main → 自动上线。后台任务由 GitHub Actions 承担（提醒推送、APK 构建）
+- **v2.0.0 起有后端：Supabase**（账户 + 课表云存储，见「三之二」节）；其余静态能力不变
 - 电脑端 = index.html，手机端 = mobile.html（两页完全独立、各自内联 JS/CSS，改功能需同步改两处）
 - **设备路由（v1.4.1）**：index.html `<head>` 内联脚本把 iOS（含 iPadOS 伪装 Mac UA：platform==='MacIntel' && maxTouchPoints>1）和 Android 重定向到 `./mobile.html`（保 hash，sessionStorage.forceDesktop 可逃逸）。manifest start_url 是 ./index.html，所以 PWA 首页也会走此路由
 - 课件文件功能**只在 mobile.html**（桌面版无此功能，触屏设备一律路由到手机版）
-- 浏览器数据存 localStorage，**不跨设备同步**；schedule.json 是给提醒脚本用的仓库端副本（手动维护，与网页不联动）
+- 浏览器数据存 localStorage 做本机缓存；**v2.0.0 起课表经 Supabase 跨设备同步**（未登录不可见）；schedule.json 是提醒脚本的数据源（v2.0.0 起由主人账户改课时自动更新）
 
 ## 二、文件清单
 | 文件 | 作用 |
@@ -46,6 +47,29 @@
     - `cloudSyncing` 互斥标志防并发；写入清单用 Contents API PUT（带旧 sha）
     - **一键云同步（v1.5.1）**：课表工具栏（撤销/退课/加课旁）渐变色「☁️ 云同步」按钮（#cloudSyncBtn）→ `cloudSyncAll()`：先 `uploadPendingToCloud()`（返回 {uploaded}，toast 由调用方处理）再 `syncFromCloud()`，结果合并 toast；按钮 .syncing 类有 ☁️ 浮动动画；`cloudSyncAllBusy` 防连点
     - 注意：公开仓库的课件文件是公开可访问的（URL 含 uuid 较难猜但非私密）
+
+## 三之二、账户系统（v2.0.0，Supabase）
+- **Supabase 项目**：ref `ygzgdtfkitymxhxuyrjt`（Singapore），URL `https://ygzgdtfkitymxhxuyrjt.supabase.co`
+  - 前端公开配置（两页顶部）：`SUPABASE_URL` + `SUPABASE_ANON_KEY`（`sb_publishable_RlsFCT7-WgItjCEv6DAYgg_oRCzwuZq`，新式 publishable key，可公开）
+  - Auth 设置：`mailer_autoconfirm=true`（关闭邮箱验证，注册即用；经 Management API PATCH /config/auth 设置）
+  - **表 `public.user_settings`**（v2.2.0 新增）：`user_id uuid PK→auth.users(id) on delete cascade`、`calendar jsonb default '{}'`、`updated_at timestamptz default now()`；RLS 开启，策略 own select/insert/update。存每用户自定义校历（semesters/holidays/examPeriods/makeupDays）。新用户首次登录自动初始化 DEFAULT_CALENDAR 到此表
+  - **v2.0.0→v2.1.0 迁移**：旧 PK 约束 drop，加 id 列 + name 列 + saved_at 列，PK 改为 id，建 user_id 索引；旧单行自动变成"我的课表"
+  - SDK：`<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">`（jsDelivr 国内可达），全局 `sb = window.supabase.createClient(URL, KEY)`
+- **核心常量/全局**（两页顶部基础数据区）：`SUPABASE_READY`（URL/KEY 含 '__' 占位符则 false → 本地模式跳过账户）、`OWNER_EMAIL='2214077724@qq.com'`、`UNLOCK_KEY='calendar_unlocked'`(sessionStorage)、`LAST_EMAIL_KEY`、`LAST_SAVED_AT_KEY='calendar_last_saved_at_'`（v2.1.0 改成 per-timetable：+timetableId 后缀）、`ACTIVE_TT_KEY='calendar_active_tt_'`（+userId，记当前激活课表 id）、`let sb/currentUser/cloudPushTimer/timetables/activeTimetableId`
+- **账户块函数**（两页尾部，replace 了 v1.6.0 本地密码锁）：`hideLock / authErr / authBusy / renderAuth('login'|'register') / doAuth / renderUnlock / enterApp / loadCalendarFromCloud / saveCalendarToCloud / openCalendarSettings / renderHolidayList / loadAccountData / switchTimetable(id,opts) / createTimetable(name,data) / deleteTimetable(id) / renameTimetable(id) / renderTimetableSwitcher() / scheduleCloudPush(immediate) / pushTimetableToCloud / doLogout / updateAccountBar / initAccount(IIFE)`；mobile.html 额外有 `syncScheduleJsonToRepo()`
+- **启动判定（initAccount）**：无 Supabase/未配置 → sb=null 本地模式（updateAccountBar 隐藏退出按钮）；有 session + sessionStorage UNLOCK 标记 → 直接进应用并 loadAccountData；有 session 无标记 → renderUnlock（重新输密码，signInWithPassword 验证）；无 session → renderAuth('login')
+- **注册**：邮箱 + 两遍密码（≥6 位，不一致提示），signUp；`!data.session` → 提示需邮箱验证（现项目已关验证不会发生）
+- **数据同步（v2.1.0 多课表）**：`saveData()` 末尾 `if (sb && currentUser) scheduleCloudPush()`（900ms 防抖）→ `pushTimetableToCloud()`：`update {data:{events,courses,savedAt}, saved_at, updated_at} where id=activeTimetableId`（不再 upsert user_id），savedAt 写 `localStorage[LAST_SAVED_AT_KEY+activeTimetableId]`
+- **多课表操作**：`loadAccountData` 拉 user 的所有行（按 updated_at desc）→ 若空且本机有非默认数据 → createTimetable('我的课表', 本机数据)；否则选 ACTIVE_TT_KEY 记录的或最新一行 → `switchTimetable`。`switchTimetable(id,{silent})` 比较 saved_at 与本地 → 较新者应用，更新 activeTimetableId + localStorage，renderTimetableSwitcher。`createTimetable` insert 一行新空表并切过去。`deleteTimetable` 删除并切到第一个（最后一个不允许删）。`renameTimetable` 用 prompt 输入新名。所有操作通过 Supabase REST 完成，UI 同步刷新
+- **校历云端化（v2.2.0）**：`const SEMESTERS/EXAM_PERIODS/HOLIDAYS/MAKEUP_DAYS` 改成 `let`（可在运行时被云端覆盖）；`DEFAULT_CALENDAR` const 保存原始默认值（深拷贝）。`enterApp()` 和 `initAccount()` 里在 `loadAccountData()` 前先 `await loadCalendarFromCloud()`：select user_settings.calendar，若有则覆盖四个变量，若无则 `saveCalendarToCloud()` 初始化默认值到云端。`openCalendarSettings()` 创建 #calSettingsModal 弹窗，renderHolidayList() 渲染节假日列表（✕删除），底部表单添加（name+start+end → push+sort+save+renderCalendar），重置按钮恢复 DEFAULT_CALENDAR。📅 按钮 #calSettingsBtn 在 schedule-tools 工具栏，renderTimetableSwitcher 控制显示
+- **冲突策略（loadAccountData）**：云端 savedAt > 本地 → 应用云端数据（events/courses 替换 + saveData + 三渲染 + toast ⬇️已同步）；本地较新 → 立即 push；云端无行 → 若本机有非默认数据且未拒绝过 → confirm 导入（拒绝记 `calendar_import_declined_<uid>` 不再问）
+- **主人联动**：`currentUser.email === OWNER_EMAIL` 时每次成功 push 后 `syncScheduleJsonToRepo()`（仅 mobile）：GET 仓库 schedule.json（用课件功能的 ghToken/ghHeaders）→ 只替换 courses 数组（映射 name/weekday/start/end/location/type）→ PUT 回写（带 sha）→ toast ☁️，保证 WxPusher 提醒数据源最新
+- **UI**：登录/注册用旧锁屏 overlay（#lockOverlay）+ .lock-card 样式；新增 .auth-tabs/.auth-tab 选项卡、.account-bar（更新日志弹窗内 👤 邮箱 + ⏻ 退出登录按钮，登录时才显示）；unlock 屏有「退出登录，切换账号」
+- **v2.1.0 课表工具栏新增控件**（两页 schedule-tools 内，登录后显示）：`#ttSelect`（下拉切换课表，class .tt-select）+ `#ttNewBtn`（＋新建）+ `#ttRenameBtn`（✏️重命名，prompt 输入）+ `#ttDeleteBtn`（🗑删除，confirm 后 delete from Supabase，最后一个不允许删）+ `#logoutBtn2`（⏻显眼退出登录按钮，调 doLogout）。`renderTimetableSwitcher()` 控制可见性和填充 select options
+- **忘记密码**：登录页 authForgot → `sb.auth.resetPasswordForEmail`（Supabase 内置 SMTP 免费额度 2-4 封/小时）
+- **v2.1.1 新账户空白起步**：`loadData()` 不再预置 DEFAULT_EVENTS/DEFAULT_COURSES（新设备 localStorage 为空时 events/courses 保持空数组）；`loadAccountData` 的 `hasLocal` 改为 `events.length > 0 || courses.length > 0`（避免空 saveData 触发误判有本地数据要导入）。新注册账户打开即空白课表（"空白课表"），云端行 `n_events=0, n_courses=0`，不再看到 CSC/ECO 默认课表，不再弹"是否导入"对话框
+- **Management API（PAT sbp_… 用户已提供，建议已让用户 revoke）**：POST /v1/projects/{ref}/database/query 跑 SQL；PATCH /v1/projects/{ref}/config/auth 改 Auth 设置
+- **实测通过**：注册（自动确认）、云端写入/读回、错误密码拦截、解锁后云端加载、同会话免锁、登出重登、桌面版同套账户；jsDelivr CDN 加载正常
 
 ## 四、校历逻辑（mobile.html ~1158-1250）
 - 常量表：`SEMESTERS`（含 type:'independent' 独立探索期）、`EXAM_PERIODS`、`HOLIDAYS`、`MAKEUP_DAYS`（{date, weekdayAs: 补课按周几上}）
