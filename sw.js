@@ -1,5 +1,5 @@
 // Service Worker - 离线缓存
-const CACHE = 'calendar-v41';
+const CACHE = 'calendar-v42';
 const ASSETS = ['./', './index.html', './mobile.html', './manifest.json', './icon-192.png', './icon-512.png', './crest.png'];
 
 self.addEventListener('install', (e) => {

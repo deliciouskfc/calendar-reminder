@@ -1263,8 +1263,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.8.0';
-const APP_VERSION_CODE = 41;
+const APP_VERSION = '2.8.1';
+const APP_VERSION_CODE = 42;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1298,6 +1298,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.8.1', date: '2026-09-08', items: [
+    '🔒 删除留言权限收紧：仅 2214077724@qq.com（超级管理员）可长按/右键删除单条留言、清空会话及清空全部聊天记录',
+    '服务端 RLS 策略同步收紧，其他管理员（含 3057278447）不再显示删除/清空按钮'
+  ]},
   { version: 'v2.8.0', date: '2026-09-08', items: [
     '管理员可长按（手机）/右键（电脑）删除任意单条留言，双方界面实时同步消失',
     '管理员新增「🗑 清空」按钮：清空与某人的全部聊天；「🗑 清空全部」：一键清空自己的全部聊天记录（双确认）'
@@ -3799,6 +3803,8 @@ function doLogout() {
 ================================================================ */
 const ADMIN_EMAILS = ['2214077724@qq.com', '3057278447@qq.com'];
 const isAdminUser = () => !!(currentUser && ADMIN_EMAILS.includes(String(currentUser.email || '').toLowerCase()));
+// 删除留言权限仅限 22140（超级管理员），与服务器端 is_super_admin() 保持一致
+const isSuperAdmin = () => !!(currentUser && String(currentUser.email || '').toLowerCase() === OWNER_EMAIL);
 
 let msgCache = [];          // 与我相关的所有留言
 let msgTimer = null;        // 未读轮询
@@ -4042,21 +4048,21 @@ function openMessageBoard() {
   document.body.appendChild(modal);
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.getElementById('msgClose').onclick = () => modal.remove();
-  // 会话内清空按钮（仅管理员可见）
+  // 会话内清空按钮（仅 22140 超级管理员可见）
   document.getElementById('msgClearThreadBtn').onclick = clearThreadMsgs;
-  // 长按（手机0.5秒）/ 右键（电脑）删除单条留言（仅管理员）
+  // 长按（手机0.5秒）/ 右键（电脑）删除单条留言（仅 22140 超级管理员）
   const tlist = document.getElementById('msgThreadList');
   let lpTimer = null;
   const stopLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
   tlist.addEventListener('contextmenu', (e) => {
     const b = e.target.closest('.msg-bubble');
-    if (!b || !isAdminUser()) return;
+    if (!b || !isSuperAdmin()) return;
     e.preventDefault();
     deleteMsgById(b.dataset.id);
   });
   tlist.addEventListener('touchstart', (e) => {
     const b = e.target.closest('.msg-bubble');
-    if (!b || !isAdminUser()) return;
+    if (!b || !isSuperAdmin()) return;
     stopLp();
     const tid = b.dataset.id;
     lpTimer = setTimeout(() => {
@@ -4123,8 +4129,9 @@ function showMsgList() {
   let footHtml = `<button id="msgRefreshBtn" style="padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">🔄 刷新</button>`;
   if (isAdminUser()) {
     footHtml += `<button id="msgNewBtn" style="flex:1; padding:9px 14px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;">✉️ 写新留言</button>
-      <button id="msgUsersBtn" style="flex:1; padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">👥 用户管理</button>
-      <button id="msgClearAllBtn" style="flex:1; padding:9px 14px; border:1px solid #f2c6c6; background:#fff5f5; color:#c0392b; border-radius:10px; font-size:13px; cursor:pointer;">🗑 清空全部</button>`;
+      <button id="msgUsersBtn" style="flex:1; padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">👥 用户管理</button>`;
+    // 「🗑 清空全部」仅 22140（超级管理员）可见
+    if (isSuperAdmin()) footHtml += `<button id="msgClearAllBtn" style="flex:1; padding:9px 14px; border:1px solid #f2c6c6; background:#fff5f5; color:#c0392b; border-radius:10px; font-size:13px; cursor:pointer;">🗑 清空全部</button>`;
   } else {
     footHtml += `<button id="msgNewBtn" style="flex:1; padding:9px 14px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;">✉️ 联系管理员</button>`;
   }
@@ -4180,7 +4187,7 @@ function showMsgThread() {
   if (!listView || !threadView || !msgThreadPeer) return;
   document.getElementById('msgTitle').textContent = '💬 ' + msgThreadPeer.email;
   const cbtnT = document.getElementById('msgClearThreadBtn');
-  if (cbtnT) cbtnT.style.display = isAdminUser() ? 'inline-block' : 'none';
+  if (cbtnT) cbtnT.style.display = isSuperAdmin() ? 'inline-block' : 'none';
   listView.style.display = 'none';
   footer.style.display = 'none';
   threadView.style.display = 'flex';
@@ -4230,9 +4237,9 @@ async function markThreadRead(peerId) {
   } catch (e) { /* 静默 */ }
 }
 
-// 删除单条留言（仅管理员：长按/右键气泡触发）
+// 删除单条留言（仅 22140 超级管理员：长按/右键气泡触发）
 async function deleteMsgById(id) {
-  if (!sb || !isAdminUser() || !id) return;
+  if (!sb || !isSuperAdmin() || !id) return;
   if (!confirm('删除这条留言？双方界面都会同步消失')) return;
   const { error } = await sb.from('messages').delete().eq('id', id);
   if (error) { showToast('⚠️ 删除失败：' + error.message); return; }
@@ -4242,9 +4249,9 @@ async function deleteMsgById(id) {
   showToast('🗑 已删除');
 }
 
-// 清空与当前会话对象的全部聊天（仅管理员）
+// 清空与当前会话对象的全部聊天（仅 22140 超级管理员）
 async function clearThreadMsgs() {
-  if (!sb || !isAdminUser() || !msgThreadPeer) return;
+  if (!sb || !isSuperAdmin() || !msgThreadPeer) return;
   if (!confirm('清空与 ' + msgThreadPeer.email + ' 的全部聊天记录？不可恢复！')) return;
   const ids = msgCache.filter(m => (m.sender_id === msgThreadPeer.id && m.recipient_id === currentUser.id) || (m.sender_id === currentUser.id && m.recipient_id === msgThreadPeer.id)).map(m => m.id);
   if (!ids.length) { showToast('暂无聊天记录'); return; }
@@ -4256,9 +4263,9 @@ async function clearThreadMsgs() {
   showToast('🗑 已清空该会话');
 }
 
-// 清空我的全部聊天记录（仅管理员，双确认）
+// 清空我的全部聊天记录（仅 22140 超级管理员，双确认）
 async function clearAllMyMsgs() {
-  if (!sb || !isAdminUser()) return;
+  if (!sb || !isSuperAdmin()) return;
   if (!confirm('确定清空我的全部聊天记录？不可恢复！')) return;
   if (!confirm('再次确认：真的要清空全部聊天记录吗？')) return;
   const { error } = await sb.from('messages').delete().or('sender_id.eq.' + currentUser.id + ',recipient_id.eq.' + currentUser.id);

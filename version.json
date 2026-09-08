@@ -1,7 +1,7 @@
 {
-  "version": "2.8.0",
-  "versionCode": 41,
+  "version": "2.8.1",
+  "versionCode": 42,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "管理员可长按/右键删除单条留言；新增清空单个会话与清空全部聊天记录功能",
+  "updateLog": "删除留言权限收紧：仅 2214077724@qq.com 可长按/右键删除单条留言、清空会话及清空全部聊天记录",
   "forceUpdate": false
 }
