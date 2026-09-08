@@ -1,7 +1,7 @@
 {
-  "version": "2.7.3",
-  "versionCode": 40,
+  "version": "2.8.0",
+  "versionCode": 41,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "修复根因：Service Worker 误缓存 API 响应导致留言数据不更新；API 请求不再经过离线缓存",
+  "updateLog": "管理员可长按/右键删除单条留言；新增清空单个会话与清空全部聊天记录功能",
   "forceUpdate": false
 }

@@ -1263,8 +1263,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.7.3';
-const APP_VERSION_CODE = 40;
+const APP_VERSION = '2.8.0';
+const APP_VERSION_CODE = 41;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1298,6 +1298,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.8.0', date: '2026-09-08', items: [
+    '管理员可长按（手机）/右键（电脑）删除任意单条留言，双方界面实时同步消失',
+    '管理员新增「🗑 清空」按钮：清空与某人的全部聊天；「🗑 清空全部」：一键清空自己的全部聊天记录（双确认）'
+  ]},
   { version: 'v2.7.3', date: '2026-09-08', items: [
     '🔥 修复根因：Service Worker 误缓存了 Supabase API 响应，导致留言轮询永远读到旧数据（气泡消失、推送“失效”、重登才恢复均由此引起）',
     '现在 API 请求完全不经过离线缓存，仅缓存本站静态资源'
@@ -4019,13 +4023,14 @@ function openMessageBoard() {
   modal.setAttribute('style', 'display:flex; z-index:99999; position:fixed; inset:0; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; padding:16px;');
   modal.innerHTML = `
     <div style="background:#fff; border-radius:14px; width:100%; max-width:520px; height:82vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,0.3);">
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid #eee; flex-shrink:0;">
-        <h3 id="msgTitle" style="margin:0; font-size:17px; cursor:pointer;">💬 留言板</h3>
-        <button id="msgClose" style="background:none; border:none; font-size:20px; cursor:pointer; color:#888;">✕</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid #eee; flex-shrink:0; gap:8px;">
+        <h3 id="msgTitle" style="margin:0; font-size:17px; cursor:pointer; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">💬 留言板</h3>
+        <button id="msgClearThreadBtn" style="display:none; flex-shrink:0; padding:6px 10px; border:1px solid #f2c6c6; background:#fff5f5; color:#c0392b; border-radius:8px; font-size:12px; cursor:pointer;">🗑 清空</button>
+        <button id="msgClose" style="background:none; border:none; font-size:20px; cursor:pointer; color:#888; flex-shrink:0;">✕</button>
       </div>
       <div id="msgListView" style="flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:8px; -webkit-overflow-scrolling:touch;"></div>
       <div id="msgThreadView" style="flex:1; overflow:hidden; display:none; flex-direction:column;">
-        <div id="msgThreadList" style="flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:8px; background:#f7f8fc; -webkit-overflow-scrolling:touch;"></div>
+        <div id="msgThreadList" style="flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:8px; background:#f7f8fc; -webkit-overflow-scrolling:touch; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;"></div>
         <div style="display:flex; gap:8px; padding:10px 12px; border-top:1px solid #eee; flex-shrink:0;">
           <input id="msgReplyInput" type="text" placeholder="输入留言内容..." style="flex:1; padding:10px 12px; font-size:15px; border:1px solid #dfe2eb; border-radius:10px; outline:none;" />
           <button id="msgSendBtn" style="padding:10px 18px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer;">发送</button>
@@ -4037,6 +4042,32 @@ function openMessageBoard() {
   document.body.appendChild(modal);
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.getElementById('msgClose').onclick = () => modal.remove();
+  // 会话内清空按钮（仅管理员可见）
+  document.getElementById('msgClearThreadBtn').onclick = clearThreadMsgs;
+  // 长按（手机0.5秒）/ 右键（电脑）删除单条留言（仅管理员）
+  const tlist = document.getElementById('msgThreadList');
+  let lpTimer = null;
+  const stopLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+  tlist.addEventListener('contextmenu', (e) => {
+    const b = e.target.closest('.msg-bubble');
+    if (!b || !isAdminUser()) return;
+    e.preventDefault();
+    deleteMsgById(b.dataset.id);
+  });
+  tlist.addEventListener('touchstart', (e) => {
+    const b = e.target.closest('.msg-bubble');
+    if (!b || !isAdminUser()) return;
+    stopLp();
+    const tid = b.dataset.id;
+    lpTimer = setTimeout(() => {
+      lpTimer = null;
+      if (navigator.vibrate) { try { navigator.vibrate(30); } catch (err) {} }
+      deleteMsgById(tid);
+    }, 500);
+  }, { passive: true });
+  tlist.addEventListener('touchend', stopLp);
+  tlist.addEventListener('touchmove', stopLp);
+  tlist.addEventListener('touchcancel', stopLp);
   // 点击标题返回会话列表
   document.getElementById('msgTitle').onclick = () => showMsgList();
   // 每次打开都实时拉取最新留言
@@ -4054,6 +4085,8 @@ function showMsgList() {
   const footer = document.getElementById('msgFooter');
   if (!listView || !threadView) return;
   document.getElementById('msgTitle').textContent = '💬 留言板';
+  const cbtnL = document.getElementById('msgClearThreadBtn');
+  if (cbtnL) cbtnL.style.display = 'none';
   threadView.style.display = 'none';
   listView.style.display = 'flex';
   footer.style.display = 'flex';
@@ -4090,7 +4123,8 @@ function showMsgList() {
   let footHtml = `<button id="msgRefreshBtn" style="padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">🔄 刷新</button>`;
   if (isAdminUser()) {
     footHtml += `<button id="msgNewBtn" style="flex:1; padding:9px 14px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;">✉️ 写新留言</button>
-      <button id="msgUsersBtn" style="flex:1; padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">👥 用户管理</button>`;
+      <button id="msgUsersBtn" style="flex:1; padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">👥 用户管理</button>
+      <button id="msgClearAllBtn" style="flex:1; padding:9px 14px; border:1px solid #f2c6c6; background:#fff5f5; color:#c0392b; border-radius:10px; font-size:13px; cursor:pointer;">🗑 清空全部</button>`;
   } else {
     footHtml += `<button id="msgNewBtn" style="flex:1; padding:9px 14px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;">✉️ 联系管理员</button>`;
   }
@@ -4099,6 +4133,8 @@ function showMsgList() {
   document.getElementById('msgNewBtn').onclick = () => showMsgPicker();
   const usersBtn = document.getElementById('msgUsersBtn');
   if (usersBtn) usersBtn.onclick = () => showAdminUsers();
+  const clearAllBtn = document.getElementById('msgClearAllBtn');
+  if (clearAllBtn) clearAllBtn.onclick = clearAllMyMsgs;
 }
 
 // 收件人选择视图（管理员 → 全部用户；普通用户 → 管理员）
@@ -4108,6 +4144,8 @@ async function showMsgPicker() {
   const footer = document.getElementById('msgFooter');
   if (!listView) return;
   document.getElementById('msgTitle').textContent = '✉️ 选择收件人';
+  const cbtnP = document.getElementById('msgClearThreadBtn');
+  if (cbtnP) cbtnP.style.display = 'none';
   threadView.style.display = 'none';
   listView.style.display = 'flex';
   footer.style.display = 'none';
@@ -4141,6 +4179,8 @@ function showMsgThread() {
   const footer = document.getElementById('msgFooter');
   if (!listView || !threadView || !msgThreadPeer) return;
   document.getElementById('msgTitle').textContent = '💬 ' + msgThreadPeer.email;
+  const cbtnT = document.getElementById('msgClearThreadBtn');
+  if (cbtnT) cbtnT.style.display = isAdminUser() ? 'inline-block' : 'none';
   listView.style.display = 'none';
   footer.style.display = 'none';
   threadView.style.display = 'flex';
@@ -4154,7 +4194,7 @@ function showMsgThread() {
       const mine = m.sender_id === currentUser.id;
       return `
         <div style="display:flex; justify-content:${mine ? 'flex-end' : 'flex-start'};">
-          <div style="max-width:78%; background:${mine ? 'linear-gradient(135deg,#5a6fd6,#6a4f9e)' : '#fff'}; color:${mine ? '#fff' : '#2c3550'}; padding:9px 12px; border-radius:14px; ${mine ? 'border-bottom-right-radius:4px;' : 'border-bottom-left-radius:4px; border:1px solid #eceef5;'} font-size:14px; line-height:1.55; word-break:break-word; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+          <div class="msg-bubble" data-id="${m.id}" style="max-width:78%; background:${mine ? 'linear-gradient(135deg,#5a6fd6,#6a4f9e)' : '#fff'}; color:${mine ? '#fff' : '#2c3550'}; padding:9px 12px; border-radius:14px; ${mine ? 'border-bottom-right-radius:4px;' : 'border-bottom-left-radius:4px; border:1px solid #eceef5;'} font-size:14px; line-height:1.55; word-break:break-word; box-shadow:0 1px 3px rgba(0,0,0,0.06); cursor:default;">
             ${escapeHtml(m.content)}
             <div style="font-size:10.5px; margin-top:4px; opacity:0.8; text-align:right;">${fmtMsgTime(m.created_at)}${mine ? (m.is_read ? ' · <span style="color:#9dffc0; font-weight:600;">已读</span>' : ' · 未读') : ''}</div>
           </div>
@@ -4188,6 +4228,45 @@ async function markThreadRead(peerId) {
     updateMsgBadge();
     msgNotifyBroadcast('msg-read', peerId);
   } catch (e) { /* 静默 */ }
+}
+
+// 删除单条留言（仅管理员：长按/右键气泡触发）
+async function deleteMsgById(id) {
+  if (!sb || !isAdminUser() || !id) return;
+  if (!confirm('删除这条留言？双方界面都会同步消失')) return;
+  const { error } = await sb.from('messages').delete().eq('id', id);
+  if (error) { showToast('⚠️ 删除失败：' + error.message); return; }
+  msgCache = msgCache.filter(m => m.id !== id);
+  updateMsgBadge();
+  if (msgThreadPeer) showMsgThread(); else showMsgList();
+  showToast('🗑 已删除');
+}
+
+// 清空与当前会话对象的全部聊天（仅管理员）
+async function clearThreadMsgs() {
+  if (!sb || !isAdminUser() || !msgThreadPeer) return;
+  if (!confirm('清空与 ' + msgThreadPeer.email + ' 的全部聊天记录？不可恢复！')) return;
+  const ids = msgCache.filter(m => (m.sender_id === msgThreadPeer.id && m.recipient_id === currentUser.id) || (m.sender_id === currentUser.id && m.recipient_id === msgThreadPeer.id)).map(m => m.id);
+  if (!ids.length) { showToast('暂无聊天记录'); return; }
+  const { error } = await sb.from('messages').delete().in('id', ids);
+  if (error) { showToast('⚠️ 清空失败：' + error.message); return; }
+  msgCache = msgCache.filter(m => !ids.includes(m.id));
+  updateMsgBadge();
+  showMsgThread();
+  showToast('🗑 已清空该会话');
+}
+
+// 清空我的全部聊天记录（仅管理员，双确认）
+async function clearAllMyMsgs() {
+  if (!sb || !isAdminUser()) return;
+  if (!confirm('确定清空我的全部聊天记录？不可恢复！')) return;
+  if (!confirm('再次确认：真的要清空全部聊天记录吗？')) return;
+  const { error } = await sb.from('messages').delete().or('sender_id.eq.' + currentUser.id + ',recipient_id.eq.' + currentUser.id);
+  if (error) { showToast('⚠️ 清空失败：' + error.message); return; }
+  msgCache = msgCache.filter(m => m.sender_id !== currentUser.id && m.recipient_id !== currentUser.id);
+  updateMsgBadge();
+  showMsgList();
+  showToast('🗑 已清空全部聊天记录');
 }
 
 async function sendMsg() {
