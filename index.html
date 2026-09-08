@@ -1187,8 +1187,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.6.0';
-const APP_VERSION_CODE = 34;
+const APP_VERSION = '2.6.1';
+const APP_VERSION_CODE = 35;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1222,6 +1222,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.6.1', date: '2026-09-08', items: [
+    '发送的气泡在点下瞬间立即显示（不等网络请求），后台写库后自动替换为正式记录',
+    '留言板打开期间轮询加快到 1 秒，关闭后自动降回 10 秒'
+  ]},
   { version: 'v2.6.0', date: '2026-09-08', items: [
     '我发出的留言显示「已读 / 未读」状态（绿色 = 对方已看）',
     '打开会话或会话停留时，收到的新留言自动标记已读，红点即时消失'
@@ -3233,6 +3237,7 @@ const isAdminUser = () => !!(currentUser && ADMIN_EMAILS.includes(String(current
 
 let msgCache = [];          // 与我相关的所有留言
 let msgTimer = null;        // 未读轮询
+let msgPollMs = 10000;      // 当前轮询间隔（留言板打开时 1 秒，关闭时 10 秒）
 let msgThreadPeer = null;   // 当前会话对象 {id, email}
 
 async function loadMessages(silent) {
@@ -3247,7 +3252,14 @@ async function loadMessages(silent) {
       }
       return;
     }
+    // 合并而非覆盖：保留尚未落库的本地临时气泡（避免被轮询冲掉）
+    const localOnly = msgCache.filter(m => String(m.id).startsWith('local-'));
     msgCache = data || [];
+    localOnly.forEach(l => {
+      const dup = msgCache.some(m => m.sender_id === l.sender_id && m.content === l.content && Math.abs(new Date(m.created_at) - new Date(l.created_at)) < 120000);
+      if (!dup) msgCache.push(l);
+    });
+    msgCache.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
     updateMsgBadge();
     // 会话窗口正开着时：刷新显示（已读状态实时更新）+ 新收到的留言自动标记已读（红点即时消失）
     const tv = document.getElementById('msgThreadView');
@@ -3271,11 +3283,16 @@ function updateMsgBadge() {
   }
 }
 
-function startMsgPolling() {
+function startMsgPolling(ms) {
+  msgPollMs = ms || 10000;
   clearInterval(msgTimer);
   if (!sb || !currentUser) return;
   loadMessages(true);
-  msgTimer = setInterval(() => loadMessages(true), 20000);
+  msgTimer = setInterval(() => {
+    // 留言板已关闭时，从 1 秒快速轮询自动降回 10 秒
+    if (msgPollMs === 1000 && !document.getElementById('msgBoardModal')) { startMsgPolling(); return; }
+    loadMessages(true);
+  }, msgPollMs);
 }
 
 // 按会话对象分组：[{peer, last, unread, count}]
@@ -3337,6 +3354,7 @@ function openMessageBoard() {
   document.getElementById('msgTitle').onclick = () => showMsgList();
   // 每次打开都实时拉取最新留言
   document.getElementById('msgListView').innerHTML = '<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载中...</div>';
+  startMsgPolling(1000); // 留言板打开期间 1 秒快速轮询
   loadMessages().then(() => { if (document.getElementById('msgBoardModal')) showMsgList(); });
 }
 
@@ -3491,28 +3509,29 @@ async function sendMsg() {
   if (!content) return;
   btn.disabled = true;
   btn.textContent = '发送中…';
+  const row = {
+    sender_id: currentUser.id, sender_email: currentUser.email,
+    recipient_id: msgThreadPeer.id, recipient_email: msgThreadPeer.email || '',
+    content
+  };
+  // ① 点下发送瞬间，先在本地显示气泡（完全不等网络）
+  const tempId = 'local-' + Date.now();
+  msgCache.push({ id: tempId, is_read: false, created_at: new Date().toISOString(), ...row });
+  msgCache.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  inp.value = '';
+  if (msgThreadPeer && document.getElementById('msgThreadView').style.display !== 'none') showMsgThread();
   try {
-    const row = {
-      sender_id: currentUser.id, sender_email: currentUser.email,
-      recipient_id: msgThreadPeer.id, recipient_email: msgThreadPeer.email || '',
-      content
-    };
+    // ② 后台写库，完成后用服务器记录替换本地临时气泡
     const { data: inserted, error } = await sb.from('messages').insert(row).select().single();
-    inp.value = '';
-    // 无论云端结果如何，立即在本地显示气泡（云端失败时下次轮询会自动校正）
-    const local = inserted || { id: 'local-' + Date.now(), is_read: false, created_at: new Date().toISOString(), ...row };
-    if (!msgCache.some(m => m.id === local.id)) {
-      msgCache.push(local);
+    msgCache = msgCache.filter(m => m.id !== tempId);
+    if (inserted && !msgCache.some(m => m.id === inserted.id)) {
+      msgCache.push(inserted);
       msgCache.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
     }
     updateMsgBadge();
     if (msgThreadPeer && document.getElementById('msgThreadView').style.display !== 'none') showMsgThread();
     if (error) { showToast('⚠️ 发送失败：' + error.message); return; }
     showToast('✅ 已发送');
-    // 后台再同步一次，确保与云端一致
-    loadMessages(true).then(() => {
-      if (msgThreadPeer && document.getElementById('msgThreadView').style.display !== 'none') showMsgThread();
-    });
   } catch (e) {
     showToast('⚠️ 发送异常：' + (e.message || e));
   } finally {
