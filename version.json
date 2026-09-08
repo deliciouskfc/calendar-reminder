@@ -1,7 +1,7 @@
 {
-  "version": "1.3.2",
-  "versionCode": 7,
+  "version": "1.4.0",
+  "versionCode": 8,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "加课表单星期改为多选，一次添加一周多天的课程",
+  "updateLog": "课程支持关联本地课件文件（PDF等），课表显示课件角标\n手机端课程菜单可添加、打开、删除课件\n文件保存在浏览器本地存储空间，自动申请持久化配额",
   "forceUpdate": false
 }

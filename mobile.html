@@ -528,6 +528,43 @@
   .drop-info { flex: 1; min-width: 0; }
   .drop-name { font-size: 13px; font-weight: 600; color: #2c3e50; }
   .drop-meta { font-size: 11px; color: #95a5a6; margin-top: 1px; }
+  /* ===== 课件文件 ===== */
+  .file-list { max-height: 44vh; overflow-y: auto; }
+  .file-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 12px; border-bottom: 1px solid #f0f0f5;
+    cursor: pointer; transition: background 0.12s;
+  }
+  .file-item:active { background: #f4f6fa; }
+  .file-item:last-child { border-bottom: none; }
+  .file-icon {
+    width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 700; color: #fff;
+  }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { font-size: 13px; font-weight: 600; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-meta { font-size: 11px; color: #95a5a6; margin-top: 1px; }
+  .file-del {
+    width: 30px; height: 30px; border: none; border-radius: 7px;
+    background: #fdecea; color: #e74c3c; font-size: 14px;
+    flex-shrink: 0; cursor: pointer;
+  }
+  .file-del:active { background: #f9d2ce; }
+  .file-empty { padding: 26px 12px; text-align: center; color: #b2bec3; font-size: 13px; line-height: 1.8; }
+  .storage-info { margin-top: 10px; font-size: 11px; color: #95a5a6; text-align: center; }
+  .btn-file-add {
+    width: 100%; margin-top: 12px; padding: 12px;
+    border: 2px dashed #b8c0cf; border-radius: 10px;
+    background: #fafbfd; color: #5a6b85; font-size: 14px; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-file-add:active { background: #f0f3f8; }
+  /* 课表课程块上的附件角标 */
+  .cc-file-badge {
+    position: absolute; right: 3px; top: 2px;
+    font-size: 9px; line-height: 1; pointer-events: none;
+  }
   /* ===== 星期多选 chips ===== */
   .weekday-chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .wd-chip {
@@ -1063,12 +1100,27 @@
   </div>
 </div>
 
+<!-- 课件文件管理弹窗 -->
+<div class="modal-overlay" id="fileOverlay">
+  <div class="modal">
+    <h3 id="fileSheetTitle">📎 课件文件</h3>
+    <div class="file-list" id="fileList"></div>
+    <button class="btn-file-add" id="fileAddBtn">＋ 添加课件文件（可多选）</button>
+    <input type="file" id="filePickInput" multiple style="display:none"
+           accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.zip,.rar,.7z,image/*,audio/*,video/*">
+    <div class="storage-info" id="storageInfo"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="fileCloseBtn">关闭</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.3.2';
-const APP_VERSION_CODE = 7;
+const APP_VERSION = '1.4.0';
+const APP_VERSION_CODE = 8;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1088,6 +1140,12 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.4.0', date: '2026-09-08', items: [
+    '课程支持关联本地课件文件（PDF / PPT / DOC / 图片等）',
+    '课程弹出菜单新增「课件文件」入口，可添加、打开、删除',
+    '文件保存在浏览器本地存储空间，自动申请持久化配额，退课时同步清理',
+    '课表课程块显示课件数量角标 📄'
+  ]},
   { version: 'v1.3.2', date: '2026-09-08', items: [
     '加课表单星期改为多选 chips，一次添加一周多天的课程'
   ]},
@@ -1290,6 +1348,192 @@ function loadData() {
 }
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ events, courses }));
+  pruneOrphanFiles();
+}
+
+/* ================================================================
+   课件文件（IndexedDB 本地存储，按课程关联）
+================================================================ */
+const FILE_DB = 'calendar_files_v1';
+const FILE_STORE = 'files';
+
+function openFileDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FILE_DB, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(FILE_STORE, { keyPath: 'id' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function fileDb(mode, fn) {
+  const db = await openFileDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE, mode);
+    const req = fn(tx.objectStore(FILE_STORE));
+    tx.oncomplete = () => { db.close(); resolve(req && req.result); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+const dbAddFiles = (records) => fileDb('readwrite', st => {
+  records.forEach(r => st.put(r));
+});
+const dbGetAllFiles = () => fileDb('readonly', st => st.getAll());
+const dbDeleteFile = (id) => fileDb('readwrite', st => st.delete(id));
+
+// 删除课程后清理其附件（saveData 时自动执行）
+async function pruneOrphanFiles() {
+  try {
+    const ids = new Set(courses.map(c => c.id));
+    const files = await dbGetAllFiles();
+    const dead = files.filter(f => !ids.has(f.courseId));
+    for (const f of dead) await dbDeleteFile(f.id);
+    if (dead.length) attachCountsDirty = true;
+  } catch (e) { /* IndexedDB 不可用时忽略 */ }
+}
+
+function formatSize(n) {
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(0) + ' KB';
+  return n + ' B';
+}
+function fileIconMeta(name, type) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (ext === 'pdf') return { label: 'PDF', color: '#e74c3c' };
+  if (['ppt', 'pptx'].includes(ext)) return { label: 'PPT', color: '#e67e22' };
+  if (['doc', 'docx', 'txt', 'md'].includes(ext)) return { label: 'DOC', color: '#2980b9' };
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return { label: 'XLS', color: '#27ae60' };
+  if (['zip', 'rar', '7z'].includes(ext)) return { label: 'ZIP', color: '#8e44ad' };
+  if (type.startsWith('image/')) return { label: 'IMG', color: '#16a085' };
+  if (type.startsWith('audio/')) return { label: 'AUD', color: '#d35400' };
+  if (type.startsWith('video/')) return { label: 'VID', color: '#c0392b' };
+  return { label: 'FILE', color: '#7f8c8d' };
+}
+
+/* ---------- 课件管理弹窗 ---------- */
+let fileSheetCourse = null;   // 当前弹窗对应的课程
+
+async function openFileSheet(course) {
+  fileSheetCourse = course;
+  document.getElementById('fileSheetTitle').textContent = `📎 课件文件 — ${course.name}`;
+  document.getElementById('fileOverlay').classList.add('active');
+  await renderFileList();
+  // 申请持久化存储空间（浏览器提供配额内权限，防清理）
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => {});
+  }
+}
+
+async function renderFileList() {
+  const listEl = document.getElementById('fileList');
+  const infoEl = document.getElementById('storageInfo');
+  const files = await dbGetAllFiles();
+  const mine = files.filter(f => f.courseId === fileSheetCourse.id)
+                    .sort((a, b) => b.addedAt - a.addedAt);
+
+  if (mine.length === 0) {
+    listEl.innerHTML = `<div class="file-empty">还没有课件文件<br>点击下方按钮从手机里选择（PDF / PPT / DOC / 图片等）</div>`;
+  } else {
+    listEl.innerHTML = mine.map(f => {
+      const m = fileIconMeta(f.name, f.type);
+      return `
+      <div class="file-item" data-fid="${f.id}">
+        <div class="file-icon" style="background:${m.color}">${m.label}</div>
+        <div class="file-info">
+          <div class="file-name">${escapeHtml(f.name)}</div>
+          <div class="file-meta">${formatSize(f.size)} · ${new Date(f.addedAt).toLocaleDateString('zh-CN')}</div>
+        </div>
+        <button class="file-del" data-del="${f.id}">✕</button>
+      </div>`;
+    }).join('');
+    listEl.querySelectorAll('.file-item').forEach(el => {
+      el.addEventListener('click', (ev) => {
+        if (ev.target.closest('.file-del')) return;
+        const rec = mine.find(x => x.id === el.dataset.fid);
+        if (rec) openFileBlob(rec);
+      });
+    });
+    listEl.querySelectorAll('.file-del').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        if (!confirm('删除该课件文件？')) return;
+        await dbDeleteFile(btn.dataset.del);
+        attachCountsDirty = true;
+        renderSchedule();
+        await renderFileList();
+      });
+    });
+  }
+
+  if (navigator.storage && navigator.storage.estimate) {
+    const est = await navigator.storage.estimate();
+    infoEl.textContent = `本应用已用 ${formatSize(est.usage || 0)} · 剩余约 ${formatSize((est.quota || 0) - (est.usage || 0))}`;
+  } else {
+    infoEl.textContent = '';
+  }
+}
+
+function openFileBlob(rec) {
+  const url = URL.createObjectURL(rec.blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+/* ---------- 添加文件入口 ---------- */
+const filePickInput = document.getElementById('filePickInput');
+document.getElementById('fileAddBtn').addEventListener('click', () => filePickInput.click());
+filePickInput.addEventListener('change', async () => {
+  const files = [...filePickInput.files];
+  filePickInput.value = '';
+  if (!files.length || !fileSheetCourse) return;
+  const records = [];
+  for (const f of files) {
+    if (f.size > 100 * 1024 * 1024) {
+      alert(`"${f.name}" 超过 100MB，已跳过`);
+      continue;
+    }
+    records.push({
+      id: uuid(), courseId: fileSheetCourse.id,
+      name: f.name, type: f.type || '', size: f.size,
+      blob: f, addedAt: Date.now()
+    });
+  }
+  if (!records.length) return;
+  await dbAddFiles(records);
+  attachCountsDirty = true;
+  renderSchedule();
+  await renderFileList();
+});
+document.getElementById('fileCloseBtn').addEventListener('click', () => {
+  document.getElementById('fileOverlay').classList.remove('active');
+  fileSheetCourse = null;
+});
+
+/* ---------- 课表课程块附件角标 ---------- */
+let attachCountsDirty = true;   // 文件增删后置 true，下次渲染课表时重查
+async function decorateAttachmentBadges() {
+  document.querySelectorAll('.tt-course').forEach(el => {
+    const old = el.querySelector('.cc-file-badge');
+    if (old) old.remove();
+  });
+  if (attachCountsDirty) {
+    try {
+      const files = await dbGetAllFiles();
+      window._attachCounts = files.reduce((m, f) => (m[f.courseId] = (m[f.courseId] || 0) + 1, m), {});
+      attachCountsDirty = false;
+    } catch (e) { window._attachCounts = {}; }
+  }
+  const counts = window._attachCounts || {};
+  document.querySelectorAll('.tt-course').forEach(el => {
+    const c = el._course;
+    if (c && counts[c.id] > 0) {
+      const b = document.createElement('span');
+      b.className = 'cc-file-badge';
+      b.textContent = '📄' + counts[c.id];
+      el.appendChild(b);
+    }
+  });
 }
 
 /* ================================================================
@@ -1713,6 +1957,7 @@ function renderSchedule() {
   });
 
   renderLegend();
+  decorateAttachmentBadges();
 }
 
 function renderLegend() {
@@ -2020,15 +2265,21 @@ function hidePopup() {
   document.getElementById('popupMenu').style.display = 'none';
 }
 
-function showPopupCourseMenu(clickEvent, course) {
+async function showPopupCourseMenu(clickEvent, course) {
   if (Date.now() - justDraggedAt < 350) return; // 拖拽结束后忽略误触 click
   clickEvent.stopPropagation();
   const menu = document.getElementById('popupMenu');
   const hasUrl = !!(course.url && course.url.trim());
   const weekdayName = ['日','一','二','三','四','五','六'][course.weekday === 7 ? 0 : course.weekday];
   const urlLink = hasUrl
-    ? `<div class="pm-item" data-act="openurl"><span class="pm-icon">🔗</span>打开课件</div>`
+    ? `<div class="pm-item" data-act="openurl"><span class="pm-icon">🔗</span>打开课件链接</div>`
     : `<div class="pm-item" data-act="addurl"><span class="pm-icon">➕</span>添加课件链接</div>`;
+
+  // 统计该课程已关联的课件文件数
+  let fileCount = 0;
+  try {
+    fileCount = (await dbGetAllFiles()).filter(f => f.courseId === course.id).length;
+  } catch (e) {}
 
   menu.innerHTML = `
     <div style="padding:6px 12px 4px;font-size:14px;font-weight:700;color:#2c3e50;">${escapeHtml(course.name)}</div>
@@ -2039,6 +2290,7 @@ function showPopupCourseMenu(clickEvent, course) {
       ${course.instructor ? `<div>教师：${escapeHtml(course.instructor)}</div>` : ''}
       ${course.crn ? `<div>CRN：${escapeHtml(course.crn)}</div>` : ''}
     </div>
+    <div class="pm-item" data-act="files"><span class="pm-icon">📎</span>课件文件${fileCount ? `（${fileCount}）` : ''}</div>
     ${urlLink}
     <div class="pm-item" data-act="edit"><span class="pm-icon">✏️</span>编辑</div>
     <div class="pm-divider"></div>
@@ -2051,7 +2303,9 @@ function showPopupCourseMenu(clickEvent, course) {
     ev.stopPropagation();
     const act = ev.currentTarget.dataset.act;
     hidePopup();
-    if (act === 'openurl') {
+    if (act === 'files') {
+      openFileSheet(course);
+    } else if (act === 'openurl') {
       window.open(course.url, '_blank');
     } else if (act === 'addurl') {
       openModal(null, course);
