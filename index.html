@@ -1152,8 +1152,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.2.0';
-const APP_VERSION_CODE = 23;
+const APP_VERSION = '2.2.1';
+const APP_VERSION_CODE = 24;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -2684,12 +2684,17 @@ async function loadCalendarFromCloud() {
   try {
     const { data, error } = await sb.from('user_settings').select('calendar').eq('user_id', currentUser.id).maybeSingle();
     if (error) { console.warn('校历云端读取失败', error.message); return; }
-    if (data && data.calendar && data.calendar.holidays) {
-      SEMESTERS = data.calendar.semesters || DEFAULT_CALENDAR.semesters;
-      EXAM_PERIODS = data.calendar.examPeriods || DEFAULT_CALENDAR.examPeriods;
-      HOLIDAYS = data.calendar.holidays || DEFAULT_CALENDAR.holidays;
-      MAKEUP_DAYS = data.calendar.makeupDays || DEFAULT_CALENDAR.makeupDays;
+    if (data && data.calendar && Array.isArray(data.calendar.semesters)) {
+      SEMESTERS = data.calendar.semesters;
+      EXAM_PERIODS = data.calendar.examPeriods || [];
+      HOLIDAYS = data.calendar.holidays || [];
+      MAKEUP_DAYS = data.calendar.makeupDays || [];
     } else {
+      // 新用户 → 初始化空白校历
+      SEMESTERS = [];
+      EXAM_PERIODS = [];
+      HOLIDAYS = [];
+      MAKEUP_DAYS = [];
       await saveCalendarToCloud();
     }
   } catch(e) { console.warn('校历同步异常', e); }
@@ -2729,8 +2734,9 @@ function openCalendarSettings() {
             <button class="btn-tool" id="addHolidayBtn">＋ 添加</button>
           </div>
         </div>
-        <div style="margin-top:12px;">
-          <button class="btn-tool danger" id="resetCalendarBtn">↺ 重置为默认校历</button>
+        <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn-tool" id="loadDefaultCalBtn" style="${SEMESTERS.length === 0 ? '' : 'display:none;'}">📥 加载 CUHK 默认校历</button>
+          <button class="btn-tool danger" id="resetCalendarBtn" style="${SEMESTERS.length === 0 ? 'display:none;' : ''}">↺ 重置为默认校历</button>
         </div>
       </div>
     </div>
@@ -2761,9 +2767,25 @@ function openCalendarSettings() {
     HOLIDAYS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.holidays));
     MAKEUP_DAYS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.makeupDays));
     renderHolidayList();
+    document.getElementById('loadDefaultCalBtn').style.display = 'none';
+    document.getElementById('resetCalendarBtn').style.display = '';
     await saveCalendarToCloud();
     renderCalendar();
     showToast('✅ 已重置为默认校历');
+  };
+  const loadDefBtn = document.getElementById('loadDefaultCalBtn');
+  if (loadDefBtn) loadDefBtn.onclick = async () => {
+    if (!confirm('加载 CUHK 默认校历？将填充默认学期、节假日、考试期数据。')) return;
+    SEMESTERS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.semesters));
+    EXAM_PERIODS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.examPeriods));
+    HOLIDAYS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.holidays));
+    MAKEUP_DAYS = JSON.parse(JSON.stringify(DEFAULT_CALENDAR.makeupDays));
+    renderHolidayList();
+    document.getElementById('loadDefaultCalBtn').style.display = 'none';
+    document.getElementById('resetCalendarBtn').style.display = '';
+    await saveCalendarToCloud();
+    renderCalendar();
+    showToast('✅ 已加载 CUHK 默认校历');
   };
 }
 

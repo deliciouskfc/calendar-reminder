@@ -1,7 +1,7 @@
 {
-  "version": "2.2.0",
-  "versionCode": 23,
+  "version": "2.2.1",
+  "versionCode": 24,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "校历（节假日）移至云端\n每个账户可自定义节假日\n新用户自动初始化默认校历",
+  "updateLog": "新注册账户初始化空白校历\n校历设置弹窗新增加载默认校历按钮\n修复节假日编辑按钮",
   "forceUpdate": false
 }
