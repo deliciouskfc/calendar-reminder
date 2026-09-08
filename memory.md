@@ -2,7 +2,7 @@
 
 > 目的：记录本项目所有实现方式。新会话先读本文件，避免重复探索代码。
 > **每次改完代码必须顺手更新本文件**（变更点 + 行号区间 + 版本号）。
-> 最后更新：v1.5.0（跨设备课件云同步）。
+> 最后更新：v1.5.1（课表主界面一键云同步按钮）。
 
 ## 一、项目概览
 - 纯静态 PWA 课程表/日历提醒应用，**无后端**，部署 GitHub Pages：https://deliciouskfc.github.io/calendar-reminder/
@@ -44,6 +44,7 @@
     - Token：localStorage `calendar_gh_token`；课件弹窗内 cloudBar「连接 GitHub」→ prompt 粘贴 Fine-grained PAT（Contents 读写）→ GET /repos 验证；「断开」清除。上传/删除需要 Token（一个主设备配置即可）；下载走 raw.githubusercontent.com **无需 Token**（公开仓库）
     - 流程：添加文件后自动 `uploadPendingToCloud()`（清单不在本地/未同步的都传）；启动时后台 `syncFromCloud()` 按清单 diff 下载本机缺的文件（记录带 cloud:true，pruneOrphanFiles 跳过云端文件防止与删除流程拉扯）；删除时若有 Token 同步删云端文件并重写清单，无 Token 仅删本机并提示
     - `cloudSyncing` 互斥标志防并发；写入清单用 Contents API PUT（带旧 sha）
+    - **一键云同步（v1.5.1）**：课表工具栏（撤销/退课/加课旁）渐变色「☁️ 云同步」按钮（#cloudSyncBtn）→ `cloudSyncAll()`：先 `uploadPendingToCloud()`（返回 {uploaded}，toast 由调用方处理）再 `syncFromCloud()`，结果合并 toast；按钮 .syncing 类有 ☁️ 浮动动画；`cloudSyncAllBusy` 防连点
     - 注意：公开仓库的课件文件是公开可访问的（URL 含 uuid 较难猜但非私密）
 
 ## 四、校历逻辑（mobile.html ~1158-1250）
@@ -99,4 +100,5 @@
 - v1.4.1 (09-08)：iPad/Android 自动路由到手机版；更新日志弹窗加「🔄 检查更新」（发现新版自动更新）；拖拽改长按 280ms 触发；修 iOS PWA 更新误跳 APK bug；sw.js 页面改网络优先；修 calendar-v3 硬编码缓存清理 bug
 - v1.4.2 (09-08)：课件改按课程 section 共享（courseKey 归一化名字）；检查更新按钮美化
 - v1.5.0 (09-08)：**跨设备课件云同步**（GitHub 仓库 cloud-files/ 存储，见"三、数据模型"）
-- 当前版本：v1.5.0 / versionCode 11 / sw cache calendar-v11
+- v1.5.1 (09-08)：课表主界面一键「☁️ 云同步」按钮
+- 当前版本：v1.5.1 / versionCode 12 / sw cache calendar-v12

@@ -1087,8 +1087,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.5.0';
-const APP_VERSION_CODE = 11;
+const APP_VERSION = '1.5.1';
+const APP_VERSION_CODE = 12;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1108,6 +1108,9 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.5.1', date: '2026-09-08', items: [
+    '手机端课表界面新增「☁️ 云同步」一键按钮'
+  ]},
   { version: 'v1.5.0', date: '2026-09-08', items: [
     '手机端课件支持跨设备云同步（GitHub 仓库存储，其他设备自动下载）'
   ]},

@@ -519,6 +519,18 @@
   .btn-tool:hover { background: #f0f2fa; border-color: #5a6fd6; }
   .btn-tool.danger { color: #e74c3c; }
   .btn-tool.danger:hover { background: #fdf0ef; border-color: #e74c3c; }
+  /* 一键云同步按钮（渐变高亮款） */
+  .btn-tool.cloud-sync {
+    background: linear-gradient(135deg, #4a90d9, #36b5a0);
+    border: none;
+    color: #fff;
+    box-shadow: 0 3px 10px rgba(74, 144, 217, 0.35);
+  }
+  .btn-tool.cloud-sync:hover { background: linear-gradient(135deg, #3d80c9, #2ea591); }
+  .btn-tool.cloud-sync:active { transform: scale(0.95); }
+  .btn-tool.cloud-sync.syncing { opacity: 0.75; pointer-events: none; }
+  .btn-tool.cloud-sync.syncing .cs-ic { display: inline-block; animation: cloudFloat 0.9s ease-in-out infinite; }
+  @keyframes cloudFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
   /* ===== 退课列表 ===== */
   .drop-list { max-height: 46vh; overflow-y: auto; }
   .drop-item {
@@ -965,6 +977,7 @@
           <button class="btn-tool" id="undoBtn" style="display:none;">↩ 撤销</button>
           <button class="btn-tool danger" id="clearCoursesBtn">🗑 退课</button>
           <button class="btn-tool" id="restoreCoursesBtn">➕ 加课</button>
+          <button class="btn-tool cloud-sync" id="cloudSyncBtn"><span class="cs-ic">☁️</span> 云同步</button>
         </div>
         <div class="schedule-nav">
           <button class="nav-btn" id="schPrevBtn">‹</button>
@@ -1149,8 +1162,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.5.0';
-const APP_VERSION_CODE = 11;
+const APP_VERSION = '1.5.1';
+const APP_VERSION_CODE = 12;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -1170,6 +1183,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v1.5.1', date: '2026-09-08', items: [
+    '课表主界面新增「☁️ 云同步」一键按钮：自动上传本机新增 + 下载云端缺失课件',
+    '同步中按钮有浮动动画，完成后 toast 汇报上传/下载数量'
+  ]},
   { version: 'v1.5.0', date: '2026-09-08', items: [
     '跨设备课件同步：用 GitHub 仓库当免费网盘，课件自动上传 / 下载',
     '手机配置一次 Token 即可上传；iPad 等其他设备打开页面自动同步（无需配置）',
@@ -1507,23 +1524,22 @@ async function deleteCloudFile(id) {
   });
   if (!res.ok) throw new Error('删除失败 ' + res.status);
 }
-// 把本地未上云的文件全部上传
+// 把本地未上云的文件全部上传（返回 {uploaded}；toast 由调用方处理）
 async function uploadPendingToCloud() {
-  if (!ghToken() || cloudSyncing) return;
+  if (!ghToken() || cloudSyncing) return { uploaded: 0 };
   const files = await dbGetAllFiles();
   const mf = await ensureCloudManifest();
   const known = new Set((mf.files || []).map(f => f.id));
   const pending = files.filter(f => !known.has(f.id));
-  if (!pending.length) return;
+  if (!pending.length) return { uploaded: 0 };
   cloudSyncing = true;
   try {
-    showToast(`☁️ 正在上传 ${pending.length} 个文件…`);
     for (const f of pending) {
       await putCloudFile(f.id, await blobToBase64(f.blob));
       mf.files.push({ id: f.id, fileKey: fileRecordKey(f), name: f.name, type: f.type, size: f.size, uploadedAt: Date.now() });
     }
     await writeCloudManifest(mf.files);
-    showToast('✅ 已同步到云端，其他设备可下载');
+    return { uploaded: pending.length };
   } finally { cloudSyncing = false; }
 }
 // 从云端下载本机没有的文件（无需 Token）
@@ -1556,6 +1572,31 @@ async function syncFromCloud() {
     return { downloaded: ok, total: mf.files.length };
   } finally { cloudSyncing = false; }
 }
+// 主界面一键云同步：先上传本机新增（需 Token），再下载云端缺失
+let cloudSyncAllBusy = false;
+async function cloudSyncAll() {
+  if (cloudSyncAllBusy) return;
+  cloudSyncAllBusy = true;
+  const btn = document.getElementById('cloudSyncBtn');
+  if (btn) btn.classList.add('syncing');
+  try {
+    let uploaded = 0;
+    if (ghToken()) uploaded = (await uploadPendingToCloud()).uploaded;
+    const r = await syncFromCloud();
+    const parts = [];
+    if (uploaded) parts.push(`上传 ${uploaded} 个`);
+    if (r.downloaded) parts.push(`下载 ${r.downloaded} 个`);
+    if (parts.length) showToast('✅ 云同步完成：' + parts.join('，'));
+    else if (!ghToken() && !r.total) showToast('☁️ 云端暂无课件（在课件面板可连接 GitHub 上传）');
+    else showToast('✅ 课件已是最新');
+  } catch (e) {
+    showToast('⚠️ 同步失败：' + (e.message || '请检查网络'));
+  } finally {
+    cloudSyncAllBusy = false;
+    if (btn) btn.classList.remove('syncing');
+  }
+}
+
 // 连接 / 断开 GitHub Token
 async function connectCloud() {
   const t = prompt('粘贴 GitHub Token（对 calendar-reminder 仓库有 Contents 读写权限）：\n\n生成方法：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token → 仓库选 calendar-reminder → Permissions 里 Contents 选 Read and write');
@@ -1570,7 +1611,9 @@ async function connectCloud() {
     localStorage.setItem(GH_TOKEN_KEY, t.trim());
     showToast('✅ 已连接云同步');
     renderCloudBar();
-    uploadPendingToCloud().catch(e => showToast('⚠️ ' + e.message));
+    uploadPendingToCloud()
+      .then(r => { if (r.uploaded) showToast(`✅ 已上传 ${r.uploaded} 个文件到云端`); })
+      .catch(e => showToast('⚠️ ' + e.message));
   } catch (e) { showToast('⚠️ 验证失败，请检查网络'); }
 }
 function renderCloudBar() {
@@ -1744,7 +1787,9 @@ filePickInput.addEventListener('change', async () => {
   renderSchedule();
   await renderFileList();
   // 已连接云同步 → 自动上传
-  if (ghToken()) uploadPendingToCloud().catch(e => showToast('⚠️ 云端上传失败：' + e.message));
+  if (ghToken()) uploadPendingToCloud()
+    .then(r => { if (r.uploaded) showToast('✅ 已同步到云端，其他设备可下载'); })
+    .catch(e => showToast('⚠️ 云端上传失败：' + e.message));
 });
 document.getElementById('fileCloseBtn').addEventListener('click', () => {
   document.getElementById('fileOverlay').classList.remove('active');
@@ -2883,6 +2928,7 @@ function renderChangelog() {
   `).join('');
 }
 const changelogOverlay = document.getElementById('changelogOverlay');
+document.getElementById('cloudSyncBtn').onclick = () => cloudSyncAll();
 document.getElementById('changelogBtn').onclick = () => {
   renderChangelog();
   changelogOverlay.classList.add('active');
