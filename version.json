@@ -1,7 +1,7 @@
 {
-  "version": "2.2.2",
-  "versionCode": 25,
+  "version": "2.3.0",
+  "versionCode": 26,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "新用户首次登录弹窗选择空白校历或 CUHK 默认校历",
+  "updateLog": "新增使用教程按钮\n上海大学校历支持\n为3057278447账户导入上海大学课表",
   "forceUpdate": false
 }

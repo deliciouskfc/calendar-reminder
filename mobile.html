@@ -1040,6 +1040,7 @@
           <button class="btn-tool" id="restoreCoursesBtn">➕ 加课</button>
           <button class="btn-tool cloud-sync" id="cloudSyncBtn"><span class="cs-ic">☁️</span> 云同步</button>
           <button class="btn-tool" id="calSettingsBtn" title="校历设置" style="display:none;">📅</button>
+          <button class="btn-tool" id="tutorialBtn" title="使用教程">❓</button>
           <button class="btn-tool" id="logoutBtn2" title="退出登录" style="display:none;">⏻</button>
         </div>
         <div class="schedule-nav">
@@ -1228,8 +1229,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.2.2';
-const APP_VERSION_CODE = 25;
+const APP_VERSION = '2.3.0';
+const APP_VERSION_CODE = 26;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -3258,6 +3259,47 @@ async function saveCalendarToCloud() {
   } catch(e) { console.warn('校历保存异常', e); }
 }
 
+function openTutorial() {
+  const old = document.getElementById('tutorialModal');
+  if (old) old.remove();
+  const modal = document.createElement('div');
+  modal.id = 'tutorialModal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal cal-settings-modal">
+      <div class="modal-header">
+        <h3>📖 使用教程</h3>
+        <button class="close-btn" id="tutorialClose">✕</button>
+      </div>
+      <div class="modal-body" style="max-height:70vh; overflow-y:auto; font-size:14px; line-height:1.7;">
+        <h4 style="margin:8px 0 4px;">📝 添加课程</h4>
+        <p style="margin:0 0 10px;">点击课表工具栏的「➕ 加课」按钮，填写课程名、星期、时间、地点等即可。</p>
+        <h4 style="margin:8px 0 4px;">🗑 退课</h4>
+        <p style="margin:0 0 10px;">点击「🗑 退课」勾选要删除的课程，确认后删除。</p>
+        <h4 style="margin:8px 0 4px;">✋ 拖动换课</h4>
+        <p style="margin:0 0 10px;">在课表上<strong>长按课程块约 0.3 秒</strong>（手机会震动），拖动到目标时间段即可。直接滑动不会误触。</p>
+        <h4 style="margin:8px 0 4px;">↩ 撤销</h4>
+        <p style="margin:0 0 10px;">拖动换课后，「↩ 撤销」按钮会出现，可撤销上一次拖动。</p>
+        <h4 style="margin:8px 0 4px;">📚 多课表</h4>
+        <p style="margin:0 0 10px;">工具栏下拉框可切换课表；「＋」新建、「✏️」重命名、「🗑」删除（最后一个不可删）。每个课表独立保存到云端。</p>
+        <h4 style="margin:8px 0 4px;">📎 课件文件</h4>
+        <p style="margin:0 0 10px;">点击课程块 → 「📎 课件文件」可上传 PDF/图片等。同名课程（如 CSC 1001-L02 的周一/周三）共享同一批课件。</p>
+        <h4 style="margin:8px 0 4px;">☁️ 云同步</h4>
+        <p style="margin:0 0 10px;">点击「☁️ 云同步」一键上传本地课件并下载云端缺失课件。需先在课件弹窗里配置 GitHub Token。</p>
+        <h4 style="margin:8px 0 4px;">📅 校历设置</h4>
+        <p style="margin:0 0 10px;">点击「📅」可添加/删除节假日、重置校历。校历数据保存在云端，只影响当前账户。</p>
+        <h4 style="margin:8px 0 4px;">🔐 账户与密码</h4>
+        <p style="margin:0 0 10px;">每次打开应用需输入密码解锁（同一会话免重复）。右上角「⏻」可退出登录切换账户。</p>
+        <h4 style="margin:8px 0 4px;">🔄 检查更新</h4>
+        <p style="margin:0 0 10px;">点击「📜 日志」→「🔄 检查更新」，有新版本会自动刷新应用。</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('tutorialClose').onclick = () => modal.remove();
+}
+
 function openCalendarSettings() {
   // 先移除已有弹窗
   const old = document.getElementById('calSettingsModal');
@@ -3576,6 +3618,8 @@ function doLogout() {
   if (delBtn) delBtn.onclick = () => { if (activeTimetableId) deleteTimetable(activeTimetableId); };
   const calBtn = document.getElementById('calSettingsBtn');
   if (calBtn) calBtn.onclick = () => openCalendarSettings();
+  const tutBtn = document.getElementById('tutorialBtn');
+  if (tutBtn) tutBtn.onclick = () => openTutorial();
   const { data } = await sb.auth.getSession();
   const session = data && data.session;
   if (!session) { renderAuth('login'); return; }
