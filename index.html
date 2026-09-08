@@ -118,6 +118,9 @@
     .day-event-pill { display: none; }
     .weekday { font-size: 11px; padding: 4px 0; }
     .nav-btn { width: 28px; height: 28px; font-size: 14px; }
+    .btn-tool { padding: 4px 8px; font-size: 11px; }
+    .schedule-tools { gap: 4px; }
+    .app-toast { bottom: 24px; font-size: 12px; }
     .events-section { padding: 10px; }
     body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
     .container { padding: 0; }
@@ -290,9 +293,13 @@
     font-size: 10px;
     line-height: 1.4;
     text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .pill-exam   { background: #e74c3c; }
   .pill-event  { background: #95a5a6; }
+  .pill-course { background: #3f9d5c; }
 
   /* ===== Events Sidebar ===== */
   .events-section {
@@ -488,12 +495,80 @@
     transition: box-shadow 0.15s, transform 0.15s;
     z-index: 2;
     box-sizing: border-box;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
   .tt-course:hover {
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     transform: scale(1.01);
     z-index: 10;
   }
+  /* ===== 拖拽换位 ===== */
+  .tt-course.dragging {
+    transition: none;
+    opacity: 0.92;
+    z-index: 100;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+    cursor: grabbing;
+  }
+  .tt-drop-target {
+    outline: 2px dashed #5a6fd6;
+    outline-offset: -2px;
+    filter: brightness(0.96);
+  }
+  .tt-drag-hint {
+    position: fixed;
+    z-index: 10001;
+    pointer-events: none;
+    font-size: 12px;
+    color: #fff;
+    background: rgba(74,88,180,0.95);
+    padding: 4px 12px;
+    border-radius: 14px;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    transform: translate(-50%, -170%);
+  }
+  /* ===== 一键退课/加课 ===== */
+  .schedule-tools { display: flex; gap: 6px; }
+  .btn-tool {
+    background: #fff;
+    border: 1px solid #d5d9e2;
+    color: #5a6fd6;
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+  .btn-tool:hover { background: #f0f2fa; border-color: #5a6fd6; }
+  .btn-tool.danger { color: #e74c3c; }
+  .btn-tool.danger:hover { background: #fdf0ef; border-color: #e74c3c; }
+  /* ===== Toast 提示 ===== */
+  .app-toast {
+    position: fixed; left: 50%; bottom: 48px;
+    transform: translateX(-50%) translateY(16px);
+    background: rgba(40,50,80,0.92); color: #fff;
+    padding: 10px 22px; border-radius: 22px;
+    font-size: 13px; z-index: 11000; opacity: 0;
+    transition: all 0.3s; pointer-events: none;
+    max-width: 82vw; text-align: center;
+  }
+  .app-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  /* ===== 更新日志 ===== */
+  .changelog-list { max-height: 52vh; overflow-y: auto; text-align: left; padding-right: 4px; }
+  .cl-ver { margin-bottom: 14px; }
+  .cl-ver:last-child { margin-bottom: 0; }
+  .cl-ver-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .cl-version { font-weight: 700; color: #4e5db0; font-size: 14px; }
+  .cl-badge {
+    font-size: 10px; background: #e8ebf8; color: #4e5db0;
+    border-radius: 8px; padding: 1px 8px; font-weight: 600;
+  }
+  .cl-date { font-size: 11px; color: #95a5a6; margin-left: auto; }
+  .cl-ver ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: #2c3e50; line-height: 1.9; }
   .tt-course .cc-code {
     font-weight: 700;
     font-size: 11.5px;
@@ -730,6 +805,7 @@
     <h1>📅 我的日历 & 课表</h1>
     <div class="header-actions">
       <button class="btn" id="todayBtn">今天</button>
+      <button class="btn" id="changelogBtn">📜 更新日志</button>
       <button class="btn btn-primary" id="addBtn">+ 新增</button>
     </div>
   </header>
@@ -774,6 +850,10 @@
     <div class="schedule-section">
       <div class="schedule-header">
         <div class="schedule-title">📚 每周课程表</div>
+        <div class="schedule-tools">
+          <button class="btn-tool danger" id="clearCoursesBtn">🗑 一键退课</button>
+          <button class="btn-tool" id="restoreCoursesBtn">➕ 一键加课</button>
+        </div>
         <div class="schedule-nav">
           <button class="nav-btn" id="schPrevBtn">‹</button>
           <span class="week-label" id="weekLabel"></span>
@@ -859,12 +939,23 @@
 <!-- 课程/事件操作弹出菜单 -->
 <div class="popup-menu" id="popupMenu" style="display:none;"></div>
 
+<!-- 更新日志弹窗 -->
+<div class="modal-overlay" id="changelogOverlay">
+  <div class="modal">
+    <h3>📜 更新日志</h3>
+    <div class="changelog-list" id="changelogList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="changelogCloseBtn">关闭</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '1.1.1';
-const APP_VERSION_CODE = 3;
+const APP_VERSION = '1.2.0';
+const APP_VERSION_CODE = 4;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 let events = [];        // 日程事件（exam / event，含具体日期）
@@ -874,6 +965,33 @@ let selectedDate = null;
 let editingId = null;
 let editingKind = null; // 'event' | 'course'
 let scheduleWeekOffset = 0;
+
+// 课表拖拽换位所需的全局状态
+let ttLayout = null;          // renderSchedule 时更新
+let justDraggedAt = 0;        // 拖拽结束后短暂屏蔽 click
+const WEEKDAY_COLS = ['一','二','三','四','五','六','日']; // 0=周一..6=周日
+
+// 更新日志
+const CHANGELOG = [
+  { version: 'v1.2.0', date: '2026-09-08', items: [
+    '新增课表课程拖拽换位：按住课程块拖到目标格即可移动；拖到已有课程的格子上则互换时间',
+    '新增一键退课 / 一键加课，日历与课表同步更新',
+    '日历视图新增课程显示（绿色标签，补课日自动按补课星期显示）',
+    '新增"更新日志"查看入口'
+  ]},
+  { version: 'v1.1.1', date: '2026-09-07', items: [
+    '修复应用图标与开屏校徽显示异常（图片损坏）',
+    '升级离线缓存，强制刷新旧资源'
+  ]},
+  { version: 'v1.1.0', date: '2026-09-07', items: [
+    '修正课程数据（ENG 1001-L15、MAT 1001-L05、MAT 1001-T20）',
+    '优化手机端界面，修复周次标签与日期重叠',
+    '新增应用内版本检查与更新提示'
+  ]},
+  { version: 'v1.0.0', date: '2026-09-07', items: [
+    '首个版本：月历 + 周课表 + 浏览器提醒 + PWA 离线缓存'
+  ]}
+];
 
 const TODAY = new Date();
 TODAY.setHours(0,0,0,0);
@@ -1085,18 +1203,33 @@ function renderCalendar() {
     else if (info.independent) cell.classList.add('independent');
     if (info.makeup) cell.classList.add('makeup');
 
-    // 只取非课程的事件（exam + event）
+    // 事件 + 课程 pills
     let pillsHtml = '';
     if (!isPast) {
+      // 课程（补课日按 weekdayAs 显示；假期/考试期/独立探索期不显示）
+      let effWk = date.getDay() === 0 ? 7 : date.getDay();
+      if (info.makeup && info.makeup.weekdayAs) effWk = info.makeup.weekdayAs;
+      const dayCourses = (!info.holiday && !info.exam && !info.independent)
+        ? courses.filter(c => (c.weekday === 7 ? 7 : c.weekday) === effWk)
+        : [];
       const dayEvents = events.filter(e => e.date === key);
-      if (dayEvents.length > 0) cell.classList.add('has-events');
-      dayEvents.slice(0, 3).forEach(e => {
+
+      if (dayCourses.length > 0 || dayEvents.length > 0) cell.classList.add('has-events');
+      let shown = 0;
+      dayCourses.slice(0, 2).forEach(c => {
+        pillsHtml += `<div class="day-event-pill pill-course">${escapeHtml(c.name)} ${c.start}</div>`;
+        shown++;
+      });
+      const evLimit = Math.max(0, 3 - shown);
+      dayEvents.slice(0, evLimit).forEach(e => {
         const cls = e.type === 'exam' ? 'pill-exam' : 'pill-event';
         const label = e.type === 'exam' ? '考试' : (e.title.length > 4 ? e.title.slice(0,4) : e.title);
         pillsHtml += `<div class="day-event-pill ${cls}">${escapeHtml(label)}</div>`;
+        shown++;
       });
-      if (dayEvents.length > 3) {
-        pillsHtml += `<div class="day-event-pill pill-event">+${dayEvents.length - 3}</div>`;
+      const total = dayCourses.length + dayEvents.length;
+      if (total > shown) {
+        pillsHtml += `<div class="day-event-pill pill-event">+${total - shown}</div>`;
       }
     }
 
@@ -1357,6 +1490,9 @@ function renderSchedule() {
     return { left: r.left - gridRect.left, right: r.right - gridRect.left, width: r.width };
   });
 
+  // 记录布局信息（拖拽换位用）
+  ttLayout = { grid, colRects, headerTop: HEADER_H, rowH: ROW_H, slotMin: TT_SLOT_MIN, startMin: TT_START_MIN, endMin: TT_END_MIN, rowCount: TT_ROW_COUNT };
+
   function positionBlock(wk /* 0=日..6=六 */, startMin, endMin) {
     // colRects 按 周一..周日 排列（headerCols[0]=周一），需把 JS weekday(0=日) 转成列索引
     const colIndex = wk === 0 ? 6 : wk - 1;
@@ -1389,7 +1525,9 @@ function renderSchedule() {
       <div class="cc-time">${course.start} - ${course.end}</div>
       ${course.location ? `<div class="cc-loc">${escapeHtml(course.location)}</div>` : ''}
     `;
+    block._course = course;
     block.onclick = (ev) => showPopupCourseMenu(ev, course);
+    block.addEventListener('pointerdown', (ev) => startCourseDrag(ev, course, block));
     grid.appendChild(block);
   }
 
@@ -1546,6 +1684,142 @@ function closeModal() {
   document.getElementById('modalOverlay').classList.remove('active');
 }
 
+/* ================================================================
+   课表拖拽换位（桌面鼠标 + 手机触摸统一用 Pointer Events）
+   - 拖到空格：移动课程到那个星期/时间（保持时长，自动对齐半小时）
+   - 拖到已有课程的格子：两节课互换星期与时间
+================================================================ */
+function minutesToStr(m) { return `${pad(Math.floor(m/60))}:${pad(m%60)}`; }
+
+function dropTargetFromPoint(x, y) {
+  if (!ttLayout) return null;
+  const L = ttLayout;
+  const rect = L.grid.getBoundingClientRect();
+  if (x < rect.left || x > rect.right || y < rect.top + L.headerTop || y > rect.bottom) return null;
+  let col = -1;
+  for (let i = 0; i < L.colRects.length; i++) {
+    if (x >= rect.left + L.colRects[i].left && x <= rect.left + L.colRects[i].right) { col = i; break; }
+  }
+  if (col < 0) return null;
+  const relY = y - rect.top - L.headerTop;
+  let slot = Math.floor(relY / L.rowH);
+  slot = Math.max(0, Math.min(L.rowCount - 1, slot));
+  return { col, weekday: col === 6 ? 7 : col + 1, slot };
+}
+
+function startCourseDrag(ev, course, block) {
+  if (ev.button !== undefined && ev.button !== 0) return;
+  if (!ttLayout) return;
+  const startX = ev.clientX, startY = ev.clientY;
+  let dragging = false, hint = null, lastTarget = null;
+
+  const clearHighlight = () => {
+    document.querySelectorAll('.tt-drop-target').forEach(el => el.classList.remove('tt-drop-target'));
+  };
+  const setHint = (text, x, y) => {
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.className = 'tt-drag-hint';
+      document.body.appendChild(hint);
+    }
+    hint.textContent = text;
+    hint.style.left = x + 'px';
+    hint.style.top = y + 'px';
+  };
+  const removeHint = () => { if (hint) { hint.remove(); hint = null; } };
+
+  const onMove = (e) => {
+    if (!dragging) {
+      if (Math.abs(e.clientX - startX) < 8 && Math.abs(e.clientY - startY) < 8) return;
+      dragging = true;
+      block.classList.add('dragging');
+    }
+    e.preventDefault();
+    block.style.transform = `translate(${e.clientX - startX}px, ${e.clientY - startY}px)`;
+    const t = dropTargetFromPoint(e.clientX, e.clientY);
+    clearHighlight();
+    if (!t) { setHint('松开取消', e.clientX, e.clientY); lastTarget = null; return; }
+    const L = ttLayout;
+    const dur = timeToMinutes(course.end) - timeToMinutes(course.start);
+    let newStart = L.startMin + t.slot * L.slotMin;
+    let newEnd = newStart + dur;
+    if (newEnd > L.endMin) { newEnd = L.endMin; newStart = newEnd - dur; }
+    if (newStart < L.startMin) { setHint('⚠ 距离太远放不下', e.clientX, e.clientY); lastTarget = null; return; }
+    const occupant = courses.find(c => c.id !== course.id &&
+      (c.weekday === 7 ? 7 : c.weekday) === t.weekday &&
+      timeToMinutes(c.start) < newEnd && timeToMinutes(c.end) > newStart);
+    if (occupant) {
+      document.querySelectorAll('.tt-course').forEach(b => {
+        if (b._course && b._course.id === occupant.id) b.classList.add('tt-drop-target');
+      });
+      setHint(`与 ${occupant.name} 交换`, e.clientX, e.clientY);
+    } else {
+      setHint(`移到 周${WEEKDAY_COLS[t.col]} ${minutesToStr(newStart)}`, e.clientX, e.clientY);
+    }
+    lastTarget = { col: t.col, weekday: t.weekday, slot: t.slot, newStart, newEnd, occupant };
+  };
+
+  const finish = (e, cancelled) => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onCancel);
+    block.classList.remove('dragging');
+    block.style.transform = '';
+    clearHighlight();
+    removeHint();
+    if (!dragging) return;
+    justDraggedAt = Date.now();
+    let applied = false;
+    // 以最后一次 move 计算的目标为准（避免 pointerup 像素偏差导致放置失效）
+    if (!cancelled && lastTarget) {
+      {
+        const oldWk = course.weekday, oldStart = course.start, oldEnd = course.end;
+        const changed = lastTarget.weekday !== oldWk || minutesToStr(lastTarget.newStart) !== oldStart;
+        if (changed) {
+          if (lastTarget.occupant) {
+            const occ = courses.find(c => c.id === lastTarget.occupant.id);
+            if (occ) {
+              occ.weekday = oldWk; occ.start = oldStart; occ.end = oldEnd;
+              course.weekday = lastTarget.weekday;
+              course.start = minutesToStr(lastTarget.newStart);
+              course.end = minutesToStr(lastTarget.newEnd);
+              showToast(`已交换 ${course.name} ↔ ${occ.name}`);
+              applied = true;
+            }
+          } else {
+            course.weekday = lastTarget.weekday;
+            course.start = minutesToStr(lastTarget.newStart);
+            course.end = minutesToStr(lastTarget.newEnd);
+            showToast(`已移动 ${course.name} → 周${WEEKDAY_COLS[t.col]} ${course.start}`);
+            applied = true;
+          }
+        }
+      }
+    }
+    if (applied) {
+      saveData();
+      renderCalendar(); renderEventsList(); renderSchedule();
+    }
+  };
+  const onUp = (e) => finish(e, false);
+  const onCancel = (e) => finish(null, true);
+  document.addEventListener('pointermove', onMove, { passive: false });
+  document.addEventListener('pointerup', onUp);
+  document.addEventListener('pointercancel', onCancel);
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'app-toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.remove(), 300);
+  }, 2200);
+}
+
 function saveItem() {
   const title = document.getElementById('eventTitle').value.trim();
   const type = document.getElementById('eventType').value;
@@ -1602,6 +1876,7 @@ function hidePopup() {
 }
 
 function showPopupCourseMenu(clickEvent, course) {
+  if (Date.now() - justDraggedAt < 350) return; // 拖拽结束后忽略误触 click
   clickEvent.stopPropagation();
   const menu = document.getElementById('popupMenu');
   const hasUrl = !!(course.url && course.url.trim());
@@ -1809,6 +2084,56 @@ document.getElementById('saveBtn').onclick = saveItem;
 document.getElementById('eventType').onchange = updateModalFields;
 document.getElementById('modalOverlay').onclick = (e) => {
   if (e.target.id === 'modalOverlay') closeModal();
+};
+
+/* ================================================================
+   一键退课 / 一键加课（日历与课表同步）
+================================================================ */
+document.getElementById('clearCoursesBtn').onclick = () => {
+  hidePopup();
+  if (courses.length === 0) { showToast('课表已经是空的'); return; }
+  if (!confirm(`确定退掉全部 ${courses.length} 节课？\n所有周的课程都会移除，之后可用"一键加课"恢复默认课表。`)) return;
+  courses = [];
+  saveData();
+  renderCalendar(); renderEventsList(); renderSchedule();
+  showToast('已退掉全部课程，日历与课表已同步');
+};
+document.getElementById('restoreCoursesBtn').onclick = () => {
+  hidePopup();
+  const existing = new Set(courses.map(c => c.id));
+  const missing = DEFAULT_COURSES.filter(c => !existing.has(c.id));
+  if (missing.length === 0) { showToast('默认课表已全部在课'); return; }
+  if (!confirm(`一键添加默认课表？\n将添加 ${missing.length} 节课（已有课程不受影响）。`)) return;
+  courses.push(...missing.map(c => ({ ...c })));
+  saveData();
+  renderCalendar(); renderEventsList(); renderSchedule();
+  showToast(`已添加 ${missing.length} 节课，日历与课表已同步`);
+};
+
+/* ================================================================
+   更新日志弹窗
+================================================================ */
+function renderChangelog() {
+  const list = document.getElementById('changelogList');
+  list.innerHTML = CHANGELOG.map((v, i) => `
+    <div class="cl-ver">
+      <div class="cl-ver-head">
+        <span class="cl-version">${v.version}</span>
+        ${i === 0 ? '<span class="cl-badge">当前版本</span>' : ''}
+        <span class="cl-date">${v.date}</span>
+      </div>
+      <ul>${v.items.map(it => `<li>${escapeHtml(it)}</li>`).join('')}</ul>
+    </div>
+  `).join('');
+}
+const changelogOverlay = document.getElementById('changelogOverlay');
+document.getElementById('changelogBtn').onclick = () => {
+  renderChangelog();
+  changelogOverlay.classList.add('active');
+};
+document.getElementById('changelogCloseBtn').onclick = () => changelogOverlay.classList.remove('active');
+changelogOverlay.onclick = (e) => {
+  if (e.target === changelogOverlay) changelogOverlay.classList.remove('active');
 };
 
 /* ================================================================

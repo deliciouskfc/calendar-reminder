@@ -1,7 +1,7 @@
 {
-  "version": "1.1.1",
-  "versionCode": 3,
+  "version": "1.2.0",
+  "versionCode": 4,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "1. 修复应用图标与开屏校徽显示异常（图片损坏）\n2. 升级离线缓存，强制刷新旧资源",
+  "updateLog": "1. 新增课表课程拖拽换位（拖到空格移动，拖到已有课程则互换时间）\n2. 新增一键退课 / 一键加课，日历与课表同步更新\n3. 日历视图新增课程显示（绿色标签）\n4. 新增更新日志查看入口",
   "forceUpdate": false
 }
