@@ -1173,6 +1173,7 @@
     <div class="account-bar" id="accountBar"></div>
     <div class="modal-actions">
       <button class="btn btn-update" id="checkUpdateBtn">🔄 检查更新</button>
+      <button class="btn" id="msgBoardBtn2" style="display:none;">💬 留言板</button>
       <button class="btn" id="logoutBtn" style="display:none;">⏻ 退出登录</button>
       <button class="btn btn-primary" id="changelogCloseBtn">关闭</button>
     </div>
@@ -1184,8 +1185,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.4.0';
-const APP_VERSION_CODE = 30;
+const APP_VERSION = '2.4.1';
+const APP_VERSION_CODE = 31;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1219,6 +1220,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.4.1', date: '2026-09-08', items: [
+    '「📜 日志」弹窗新增「💬 留言板」按钮，日历页也能直接进入留言板',
+    '管理员入口路径：留言板底部「👥 用户管理」'
+  ]},
   { version: 'v2.4.0', date: '2026-09-08', items: [
     '新增 💬 留言板：管理员可给任何用户留言，对方可回复',
     '留言板未读数角标提醒，60 秒自动刷新',
@@ -2592,6 +2597,10 @@ document.getElementById('changelogBtn').onclick = () => {
 };
 document.getElementById('changelogCloseBtn').onclick = () => changelogOverlay.classList.remove('active');
 document.getElementById('checkUpdateBtn').onclick = (e) => manualCheckUpdate(e.currentTarget);
+document.getElementById('msgBoardBtn2').onclick = () => {
+  changelogOverlay.classList.remove('active');
+  openMessageBoard();
+};
 changelogOverlay.onclick = (e) => {
   if (e.target === changelogOverlay) changelogOverlay.classList.remove('active');
 };
@@ -3135,10 +3144,12 @@ function updateAccountBar() {
   const btn = document.getElementById('logoutBtn');
   const btn2 = document.getElementById('logoutBtn2');
   const msgBtn = document.getElementById('msgBoardBtn');
+  const msgBtn2 = document.getElementById('msgBoardBtn2');
   if (bar) bar.textContent = currentUser ? '👤 ' + currentUser.email : (SUPABASE_READY ? '未登录' : '未启用账户（未配置 Supabase）');
   if (btn) btn.style.display = (sb && currentUser) ? '' : 'none';
   if (btn2) btn2.style.display = (sb && currentUser) ? '' : 'none';
   if (msgBtn) msgBtn.style.display = (sb && currentUser) ? '' : 'none';
+  if (msgBtn2) msgBtn2.style.display = (sb && currentUser) ? '' : 'none';
 }
 
 function doLogout() {
