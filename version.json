@@ -1,7 +1,7 @@
 {
-  "version": "2.7.2",
-  "versionCode": 39,
+  "version": "2.7.3",
+  "versionCode": 40,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "新增 Broadcast 即时通知与轮询界面刷新修复，收发/已读秒级同步",
+  "updateLog": "修复根因：Service Worker 误缓存 API 响应导致留言数据不更新；API 请求不再经过离线缓存",
   "forceUpdate": false
 }

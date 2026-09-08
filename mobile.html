@@ -1263,8 +1263,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.7.2';
-const APP_VERSION_CODE = 39;
+const APP_VERSION = '2.7.3';
+const APP_VERSION_CODE = 40;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1298,6 +1298,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.7.3', date: '2026-09-08', items: [
+    '🔥 修复根因：Service Worker 误缓存了 Supabase API 响应，导致留言轮询永远读到旧数据（气泡消失、推送“失效”、重登才恢复均由此引起）',
+    '现在 API 请求完全不经过离线缓存，仅缓存本站静态资源'
+  ]},
   { version: 'v2.7.2', date: '2026-09-08', items: [
     '新增 Broadcast 即时通知通道（不依赖数据库复制，收发与已读秒级同步）',
     '修复兜底轮询只更新数据不刷新界面的问题，留言板列表/会话视图都会自动刷新'
