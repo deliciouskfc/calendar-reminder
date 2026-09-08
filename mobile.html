@@ -1263,8 +1263,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.5.0';
-const APP_VERSION_CODE = 32;
+const APP_VERSION = '2.5.1';
+const APP_VERSION_CODE = 33;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1298,6 +1298,9 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.5.1', date: '2026-09-08', items: [
+    '发送留言后气泡立即显示（即使网络异常也先本地显示，稍后自动校正）'
+  ]},
   { version: 'v2.5.0', date: '2026-09-08', items: [
     '留言实时读取：打开会话、发送留言立即显示，轮询加快到 20 秒',
     '右上角新增「💬 留言」入口（日志旁），红色数字显示未读留言数',
@@ -4019,20 +4022,22 @@ async function sendMsg() {
   btn.disabled = true;
   btn.textContent = '发送中…';
   try {
-    const { data: inserted, error } = await sb.from('messages').insert({
+    const row = {
       sender_id: currentUser.id, sender_email: currentUser.email,
       recipient_id: msgThreadPeer.id, recipient_email: msgThreadPeer.email || '',
       content
-    }).select().single();
-    if (error) { showToast('⚠️ 发送失败：' + error.message); return; }
+    };
+    const { data: inserted, error } = await sb.from('messages').insert(row).select().single();
     inp.value = '';
-    // 立即本地显示，无需等待刷新
-    if (inserted && !msgCache.some(m => m.id === inserted.id)) {
-      msgCache.push(inserted);
+    // 无论云端结果如何，立即在本地显示气泡（云端失败时下次轮询会自动校正）
+    const local = inserted || { id: 'local-' + Date.now(), is_read: false, created_at: new Date().toISOString(), ...row };
+    if (!msgCache.some(m => m.id === local.id)) {
+      msgCache.push(local);
       msgCache.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
     }
     updateMsgBadge();
     if (msgThreadPeer && document.getElementById('msgThreadView').style.display !== 'none') showMsgThread();
+    if (error) { showToast('⚠️ 发送失败：' + error.message); return; }
     showToast('✅ 已发送');
     // 后台再同步一次，确保与云端一致
     loadMessages(true).then(() => {
