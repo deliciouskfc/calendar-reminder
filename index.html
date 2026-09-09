@@ -1277,8 +1277,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.10.0';
-const APP_VERSION_CODE = 46;
+const APP_VERSION = '2.10.1';
+const APP_VERSION_CODE = 47;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1312,6 +1312,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.10.1', date: '2026-09-09', items: [
+    '💬 留言板新增长按（手机）/ 右键（电脑）消息菜单',
+    '📋 一键复制留言内容到剪贴板',
+    '↪️ 转发留言给其他用户：自动带入「转发自某人」内容，可编辑后发送'
+  ]},
   { version: 'v2.10.0', date: '2026-09-09', items: [
     '🖥 电脑端新增「📎 课件文件」：点击课程块即可上传 PDF / PPT / DOC / 图片等，与手机端功能一致',
     '☁️ 课件云存储改用 Supabase 云端：随账户自动跨设备同步，无需 GitHub Token，单文件支持到 50MB',
@@ -4141,29 +4146,30 @@ function openMessageBoard() {
     </div>
   `;
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-  document.getElementById('msgClose').onclick = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) { hideMsgActionMenu(); modal.remove(); } });
+  document.getElementById('msgClose').onclick = () => { hideMsgActionMenu(); modal.remove(); };
   // 会话内清空按钮（仅 22140 超级管理员可见）
   document.getElementById('msgClearThreadBtn').onclick = clearThreadMsgs;
-  // 长按（手机0.5秒）/ 右键（电脑）删除单条留言（仅 22140 超级管理员）
+  // 长按（手机0.5秒）/ 右键（电脑）弹出消息操作菜单：复制 / 转发 / 删除（删除仅 22140 超管）
   const tlist = document.getElementById('msgThreadList');
   let lpTimer = null;
   const stopLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
   tlist.addEventListener('contextmenu', (e) => {
     const b = e.target.closest('.msg-bubble');
-    if (!b || !isSuperAdmin()) return;
+    if (!b) return;
     e.preventDefault();
-    deleteMsgById(b.dataset.id);
+    showMsgActionMenu(e.clientX, e.clientY, b.dataset.id);
   });
   tlist.addEventListener('touchstart', (e) => {
     const b = e.target.closest('.msg-bubble');
-    if (!b || !isSuperAdmin()) return;
+    if (!b) return;
     stopLp();
+    const touch = e.touches[0];
     const tid = b.dataset.id;
     lpTimer = setTimeout(() => {
       lpTimer = null;
       if (navigator.vibrate) { try { navigator.vibrate(30); } catch (err) {} }
-      deleteMsgById(tid);
+      showMsgActionMenu(touch.clientX, touch.clientY, tid);
     }, 500);
   }, { passive: true });
   tlist.addEventListener('touchend', stopLp);
@@ -4181,6 +4187,7 @@ function openMessageBoard() {
 // 会话列表视图
 function showMsgList() {
   msgThreadPeer = null;
+  msgForwardText = null;   // 返回会话列表 = 取消未完成的转发
   const listView = document.getElementById('msgListView');
   const threadView = document.getElementById('msgThreadView');
   const footer = document.getElementById('msgFooter');
@@ -4310,7 +4317,11 @@ function openMsgThread(peer) {
   msgThreadPeer = peer;
   showMsgThread();
   const inp = document.getElementById('msgReplyInput');
-  if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 100); }
+  if (inp) {
+    if (msgForwardText) { inp.value = msgForwardText; msgForwardText = null; }
+    else inp.value = '';
+    setTimeout(() => inp.focus(), 100);
+  }
   // 实时拉取该会话最新留言
   loadMessages(true).then(() => {
     if (msgThreadPeer && msgThreadPeer.id === peer.id && document.getElementById('msgBoardModal')) {
@@ -4330,6 +4341,73 @@ async function markThreadRead(peerId) {
     updateMsgBadge();
     msgNotifyBroadcast('msg-read', peerId);
   } catch (e) { /* 静默 */ }
+}
+
+// ===== 留言消息操作菜单：复制 / 转发 / 删除（长按或右键气泡触发）=====
+let msgActionMenuEl = null;
+let msgForwardText = null;   // 转发草稿：选择收件人后自动填入输入框
+function hideMsgActionMenu() {
+  if (msgActionMenuEl) { msgActionMenuEl.remove(); msgActionMenuEl = null; }
+}
+async function copyMsgText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed; opacity:0; top:0; left:0;';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    showToast('📋 已复制到剪贴板');
+  } catch (e) {
+    window.prompt('复制下面的留言内容：', text);
+  }
+}
+function forwardMsg(msg) {
+  if (!msg) return;
+  const sender = msg.sender_id === currentUser.id ? '我' : (msg.sender_email || '对方');
+  msgForwardText = '【转发自 ' + sender + '】' + (msg.content || '');
+  showToast('↪️ 请选择转发对象');
+  showMsgPicker();
+}
+function showMsgActionMenu(x, y, msgId) {
+  hideMsgActionMenu();
+  const msg = msgCache.find(m => String(m.id) === String(msgId));
+  if (!msg) return;
+  const menu = document.createElement('div');
+  menu.style.cssText = 'position:fixed; z-index:100000; background:#fff; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,0.20); padding:6px; min-width:150px; font-size:14px;';
+  const mkItem = (icon, label, act, danger) => {
+    const d = document.createElement('div');
+    d.textContent = icon + '  ' + label;
+    d.style.cssText = 'padding:10px 16px; border-radius:8px; cursor:pointer; color:' + (danger ? '#c0392b' : '#2c3550') + '; white-space:nowrap; font-weight:500;';
+    d.onmouseenter = () => d.style.background = danger ? '#fdecea' : '#f0f3fa';
+    d.onmouseleave = () => d.style.background = '';
+    d.onclick = () => { hideMsgActionMenu(); act(); };
+    return d;
+  };
+  menu.appendChild(mkItem('📋', '复制', () => copyMsgText(msg.content || '')));
+  menu.appendChild(mkItem('↪️', '转发', () => forwardMsg(msg)));
+  if (isSuperAdmin()) {
+    menu.appendChild(mkItem('🗑️', '删除', () => deleteMsgById(msg.id), true));
+  }
+  document.body.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 10)) + 'px';
+  menu.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 10)) + 'px';
+  msgActionMenuEl = menu;
+  // 点击菜单外部关闭（忽略长按抬起瞬间的合成 click）
+  let openedAt = Date.now();
+  setTimeout(() => {
+    document.addEventListener('click', function close(ev) {
+      if (Date.now() - openedAt < 350) return;
+      if (msgActionMenuEl && !msgActionMenuEl.contains(ev.target)) hideMsgActionMenu();
+      document.removeEventListener('click', close);
+    });
+  }, 0);
 }
 
 // 删除单条留言（仅 22140 超级管理员：长按/右键气泡触发）
