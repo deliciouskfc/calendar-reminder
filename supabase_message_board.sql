@@ -163,3 +163,25 @@ drop policy if exists "courseware_storage_delete" on storage.objects;
 create policy "courseware_storage_delete" on storage.objects
   for delete to authenticated
   using (bucket_id = 'courseware' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ========== v2.11.0 留言板图片/文件发送 ==========
+-- 公共读存储桶（URL 不可猜测，仅登录用户可写自己的目录）
+insert into storage.buckets (id, name, public)
+values ('chat_files', 'chat_files', true)
+on conflict (id) do nothing;
+
+-- 读取：所有已认证用户可读（聊天文件双方都能访问）
+drop policy if exists "chat_files_read" on storage.objects;
+create policy "chat_files_read" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'chat_files');
+-- 写入：仅可写入自己 user_id 前缀下的文件
+drop policy if exists "chat_files_insert" on storage.objects;
+create policy "chat_files_insert" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'chat_files' and (storage.foldername(name))[1] = auth.uid()::text);
+-- 删除：仅文件拥有者可删
+drop policy if exists "chat_files_delete" on storage.objects;
+create policy "chat_files_delete" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'chat_files' and (storage.foldername(name))[1] = auth.uid()::text);
