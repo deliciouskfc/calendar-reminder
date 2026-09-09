@@ -1,7 +1,7 @@
 {
-  "version": "2.9.1",
-  "versionCode": 44,
+  "version": "2.9.2",
+  "versionCode": 45,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "修复平板横屏日历过扁（左右两栏等高撑满）；课表工具栏新增「🔄 刷新课表」，并修复切换账号后仍显示上一个账号课表的问题（登录/刷新一律以云端为准）",
+  "updateLog": "新增横竖屏自适应：平板横屏左右双栏等高、竖屏单列卡片化；修复电脑端「自定义开屏图标」等账户按钮在无课表时不显示的问题（登录即可见）",
   "forceUpdate": false
 }

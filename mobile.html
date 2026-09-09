@@ -997,8 +997,8 @@
   .modal-actions .btn { padding: 11px 18px; font-size: 15px; flex: 1; }
   .popup-menu { font-size: 14px; }
   .popup-menu button { padding: 12px 16px; }
-  /* 宽屏（iPad 横屏/大屏平板，≥820px）：左月历 + 右侧当日详情，放在最后确保覆盖 */
-  @media (min-width: 820px) {
+  /* 平板/大屏横屏（宽≥820 且 landscape）：左月历 + 右侧当日详情，两栏等高撑满，放在最后确保覆盖 */
+  @media (min-width: 820px) and (orientation: landscape) {
     .main { grid-template-columns: minmax(0, 1.3fr) minmax(280px, 1fr); gap: 14px; padding: 14px 16px; background: #f3f5fa; min-height: calc(100vh - 150px); align-items: stretch; }
     .calendar-section { padding: 16px; border: 1px solid #eef0f5; border-radius: 14px; display: flex; flex-direction: column; }
     .events-section { padding: 16px 18px; border: 1px solid #eef0f5; border-radius: 14px; border-top: 1px solid #eef0f5; }
@@ -1010,6 +1010,16 @@
     .day-number { font-size: 14px; }
     .day-week-tag { font-size: 9px; }
     .events-list { max-height: none; flex: 1; }
+  }
+  /* 平板/大屏竖屏（宽≥820 且 portrait）：单列上下堆叠，卡片化，格子适中不拉伸 */
+  @media (min-width: 820px) and (orientation: portrait) {
+    .main { grid-template-columns: 1fr; gap: 14px; padding: 14px 16px; background: #f3f5fa; min-height: 0; }
+    .calendar-section { padding: 18px; border: 1px solid #eef0f5; border-radius: 14px; }
+    .events-section { padding: 16px 18px; border: 1px solid #eef0f5; border-radius: 14px; border-top: 1px solid #eef0f5; }
+    .days { gap: 6px; }
+    .day { min-height: 78px; padding: 6px 8px; }
+    .day-number { font-size: 15px; }
+    .events-list { max-height: 46vh; }
   }
 </style>
 </head>
@@ -1289,8 +1299,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.9.1';
-const APP_VERSION_CODE = 44;
+const APP_VERSION = '2.9.2';
+const APP_VERSION_CODE = 45;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1324,6 +1334,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.9.2', date: '2026-09-09', items: [
+    '🔄 新增横竖屏自适应：平板横屏左右双栏等高铺满，竖屏自动切为单列卡片布局（日期格子不再被拉得超高）',
+    '🐛 修复账户菜单按钮在课表为空时不显示的问题——现在只要登录即可见'
+  ]},
   { version: 'v2.9.1', date: '2026-09-09', items: [
     '📐 修复平板横屏日历过扁：左月历与右侧当日详情两栏等高撑满，日期格子 6 行均分，不再挤在顶部',
     '🔄 课表工具栏新增「刷新课表」：一键强制从云端拉取当前账号课表与校历',
@@ -3890,12 +3904,19 @@ async function renameTimetable(id) {
 
 function renderTimetableSwitcher() {
   const sel = document.getElementById('ttSelect');
-  const show = sb && currentUser && timetables.length > 0;
-  ['moreTTRow','ttNewBtn','ttRenameBtn','ttDeleteBtn','logoutBtn2','calSettingsBtn','iconSettingsBtn'].forEach(id => {
+  const loggedIn = !!(sb && currentUser);
+  const hasTT = loggedIn && timetables.length > 0;
+  // 课表管理项：必须有课表才显示
+  ['moreTTRow','ttRenameBtn','ttDeleteBtn'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.style.display = show ? '' : 'none';
+    if (el) el.style.display = hasTT ? '' : 'none';
   });
-  if (sel && show) {
+  // 账户功能项（新建课表/退出/校历设置/自定义图标/留言）：登录即可见，与课表数量无关
+  ['ttNewBtn','logoutBtn2','calSettingsBtn','iconSettingsBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = loggedIn ? '' : 'none';
+  });
+  if (sel && hasTT) {
     sel.innerHTML = timetables.map(t => `<option value="${t.id}" ${t.id===activeTimetableId?'selected':''}>${escapeHtml(t.name)}</option>`).join('');
   }
 }
