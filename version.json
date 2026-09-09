@@ -1,7 +1,7 @@
 {
-  "version": "2.11.3",
-  "versionCode": 51,
+  "version": "2.11.4",
+  "versionCode": 52,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "留言图片消息新增「⬇ 下载」按钮，可一键保存原图；统一文件/图片下载为 blob 方式，跨域也能正常下载",
+  "updateLog": "优化 iPad/iPhone 下载：图片新页面打开可长按存相册，文件下载后提示到「文件」App 下载项目查找",
   "forceUpdate": false
 }
