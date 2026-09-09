@@ -1312,8 +1312,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.11.4';
-const APP_VERSION_CODE = 52;
+const APP_VERSION = '2.11.5';
+const APP_VERSION_CODE = 53;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1347,7 +1347,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
-  { version: 'v2.11.3', date: '2026-09-09', items: [
+  { version: 'v2.11.5', date: '2026-09-09', items: [
+    '📱 iPad/iPhone 上点击 PDF 等文件直接在 Safari 中预览打开（按钮显示「📂 打开」）',
+    '📤 预览时可点右上角分享按钮「存储到文件」或用其他 App 打开'
+  ]},
+  { version: 'v2.11.4', date: '2026-09-09', items: [
     '🖼 留言图片消息新增「⬇ 下载」按钮，可一键保存原图',
     '⬇️ 统一文件/图片下载方式，跨域也能正常下载并保留原文件名'
   ]},
@@ -4615,7 +4619,8 @@ function renderMsgBody(m, mine) {
   const f = parseMsgFile(m.content);
   if (f) {
     const fs = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.round(f.size / 1024) + ' KB';
-    const dlBtn = `<a href="${f.url}" target="_blank" rel="noopener" download="${escapeHtml(f.name)}" onclick="event.preventDefault(); downloadChatFile('${f.url}','${escapeHtml(f.name).replace(/'/g,"\\'")}'); return false;" style="display:inline-block; margin-top:4px; padding:4px 10px; background:${mine ? 'rgba(255,255,255,0.2)' : '#eef1fb'}; color:${mine ? '#fff' : '#5a6fd6'}; border-radius:6px; font-size:12px; text-decoration:none;">⬇ 下载</a>`;
+    const dlLabel = isIOSDevice() ? '📂 打开' : '⬇ 下载';
+    const dlBtn = `<a href="${f.url}" target="_blank" rel="noopener" download="${escapeHtml(f.name)}" onclick="event.preventDefault(); downloadChatFile('${f.url}','${escapeHtml(f.name).replace(/'/g,"\\'")}'); return false;" style="display:inline-block; margin-top:4px; padding:4px 10px; background:${mine ? 'rgba(255,255,255,0.2)' : '#eef1fb'}; color:${mine ? '#fff' : '#5a6fd6'}; border-radius:6px; font-size:12px; text-decoration:none;">${dlLabel}</a>`;
     if (f.isImage) {
       return `<img src="${f.url}" style="max-width:100%; max-height:200px; border-radius:8px; display:block; margin-bottom:4px; cursor:pointer;" onclick="window.open('${f.url}','_blank')" /><div style="font-size:11px; opacity:0.7;">${escapeHtml(f.name)} · ${fs}</div>${dlBtn}`;
     }
@@ -4628,28 +4633,14 @@ function isIOSDevice() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 async function downloadChatFile(url, name) {
-  // iOS/iPadOS Safari：blob 下载会进「文件」App 的下载项，图片则引导长按存相册
+  // iOS/iPadOS Safari：图片/文档都直接用系统预览打开（PDF 可在 Safari 内阅读，再点分享存到文件/其他 App）
   const looksImg = /\.(jpe?g|png|gif|webp|heic|bmp)$/i.test(name || '');
   if (isIOSDevice()) {
+    window.open(url, '_blank');
     if (looksImg) {
-      window.open(url, '_blank');
-      showToast('🖼 图片已在新页面打开，长按图片选「存储图像」即可存到相册');
-      return;
-    }
-    try {
-      showToast('⏳ 下载中…完成后请到「文件」App → 下载项目查看');
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const blob = await resp.blob();
-      const u = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = u; a.download = name || 'download';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(u), 8000);
-      setTimeout(() => showToast('✅ 已下载：打开「文件」App →「下载项目」即可找到'), 1200);
-    } catch (e) {
-      window.open(url, '_blank');
-      showToast('请在新页面中点击分享按钮 →「存储到文件」');
+      showToast('🖼 图片已打开，长按图片选「存储图像」可存到相册');
+    } else {
+      showToast('📄 文件已打开，点右上角分享按钮可「存储到文件」或用其他 App 打开');
     }
     return;
   }

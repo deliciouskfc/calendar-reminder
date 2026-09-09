@@ -1,7 +1,7 @@
 {
-  "version": "2.11.4",
-  "versionCode": 52,
+  "version": "2.11.5",
+  "versionCode": 53,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "优化 iPad/iPhone 下载：图片新页面打开可长按存相册，文件下载后提示到「文件」App 下载项目查找",
+  "updateLog": "iPad/iPhone 上点击 PDF 等文件直接在 Safari 中预览打开（按钮显示为「📂 打开」），可边看边用分享按钮存储，不再走下载流程",
   "forceUpdate": false
 }
