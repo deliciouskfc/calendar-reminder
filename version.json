@@ -1,7 +1,7 @@
 {
-  "version": "2.11.0",
-  "versionCode": 48,
+  "version": "2.11.1",
+  "versionCode": 49,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "留言板新增发送图片和文件功能：支持图片/PDF/文档等，单文件最大50MB，图片直接预览、文件可下载，长按/右键可复制转发",
+  "updateLog": "用户管理从留言板移到「更多」菜单，改为独立弹窗；修复查看用户课表时被轮询自动返回留言板的 bug",
   "forceUpdate": false
 }

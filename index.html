@@ -1085,6 +1085,7 @@
               <button class="more-item" id="iconSettingsBtn" style="display:none;">🖼 自定义开屏图标</button>
               <button class="more-item" id="tutorialBtn">❓ 使用教程</button>
               <button class="more-item" id="msgBoardBtn" style="display:none;">💬 留言板</button>
+              <button class="more-item" id="adminUsersBtn" style="display:none;">👥 用户管理</button>
               <div class="more-sep"></div>
               <button class="more-item danger" id="logoutBtn2" style="display:none;">⏻ 退出登录</button>
             </div>
@@ -1277,8 +1278,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.11.0';
-const APP_VERSION_CODE = 48;
+const APP_VERSION = '2.11.1';
+const APP_VERSION_CODE = 49;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1312,6 +1313,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.11.1', date: '2026-09-09', items: [
+    '👥 用户管理从留言板底部移至「☰ 更多」菜单',
+    '🪟 用户管理改为独立弹窗，不再被留言板轮询打断',
+    '🐛 修复查看用户课表时被自动返回留言板主页的 bug'
+  ]},
   { version: 'v2.11.0', date: '2026-09-09', items: [
     '💬 留言板新增发送图片和文件功能',
     '📎 支持图片/PDF/文档/压缩包等，单文件最大 50MB',
@@ -3797,6 +3803,8 @@ function setupMoreMenu() {
   if (tutBtn) tutBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openTutorial(); };
   const msgBtn = document.getElementById('msgBoardBtn');
   if (msgBtn) msgBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openMessageBoard(); };
+  const auBtn = document.getElementById('adminUsersBtn');
+  if (auBtn) auBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; showAdminUsersModal(); };
   const calBtn = document.getElementById('calSettingsBtn');
   if (calBtn) calBtn.onclick = (e) => { e.stopPropagation(); dd.style.display = 'none'; openCalendarSettings(); };
   const iconBtn = document.getElementById('iconSettingsBtn');
@@ -3844,12 +3852,14 @@ function updateAccountBar() {
   const msgBtn = document.getElementById('msgBoardBtn');
   const msgBtn2 = document.getElementById('msgBoardBtn2');
   const msgTopBtn = document.getElementById('msgBoardTopBtn');
+  const auBtn = document.getElementById('adminUsersBtn');
   if (bar) bar.textContent = currentUser ? '👤 ' + currentUser.email : (SUPABASE_READY ? '未登录' : '未启用账户（未配置 Supabase）');
   if (btn) btn.style.display = (sb && currentUser) ? '' : 'none';
   if (btn2) btn2.style.display = (sb && currentUser) ? '' : 'none';
   if (msgBtn) msgBtn.style.display = (sb && currentUser) ? '' : 'none';
   if (msgBtn2) msgBtn2.style.display = (sb && currentUser) ? '' : 'none';
   if (msgTopBtn) msgTopBtn.style.display = (sb && currentUser) ? '' : 'none';
+  if (auBtn) auBtn.style.display = (sb && currentUser && isAdminUser()) ? '' : 'none';
 }
 
 function doLogout() {
@@ -3947,7 +3957,7 @@ async function loadMessages(silent) {
     if (msgThreadPeer && tv && tv.style.display !== 'none') {
       showMsgThread();
       markThreadRead(msgThreadPeer.id);
-    } else if (document.getElementById('msgBoardModal')) {
+    } else if (document.getElementById('msgBoardModal') && !document.getElementById('adminUsersModal')) {
       showMsgList();
     }
   } catch (e) { /* 静默 */ }
@@ -4242,8 +4252,7 @@ function showMsgList() {
   // 底部操作按钮
   let footHtml = `<button id="msgRefreshBtn" style="padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">🔄 刷新</button>`;
   if (isAdminUser()) {
-    footHtml += `<button id="msgNewBtn" style="flex:1; padding:9px 14px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;">✉️ 写新留言</button>
-      <button id="msgUsersBtn" style="flex:1; padding:9px 14px; border:1px solid #dfe2eb; background:#fff; border-radius:10px; font-size:13px; cursor:pointer;">👥 用户管理</button>`;
+    footHtml += `<button id="msgNewBtn" style="flex:1; padding:9px 14px; border:none; background:linear-gradient(135deg,#5a6fd6,#6a4f9e); color:#fff; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;">✉️ 写新留言</button>`;
     // 「🗑 清空全部」仅 22140（超级管理员）可见
     if (isSuperAdmin()) footHtml += `<button id="msgClearAllBtn" style="flex:1; padding:9px 14px; border:1px solid #f2c6c6; background:#fff5f5; color:#c0392b; border-radius:10px; font-size:13px; cursor:pointer;">🗑 清空全部</button>`;
   } else {
@@ -4252,8 +4261,6 @@ function showMsgList() {
   footer.innerHTML = footHtml;
   document.getElementById('msgRefreshBtn').onclick = async () => { await loadMessages(); showMsgList(); };
   document.getElementById('msgNewBtn').onclick = () => showMsgPicker();
-  const usersBtn = document.getElementById('msgUsersBtn');
-  if (usersBtn) usersBtn.onclick = () => showAdminUsers();
   const clearAllBtn = document.getElementById('msgClearAllBtn');
   if (clearAllBtn) clearAllBtn.onclick = clearAllMyMsgs;
 }
@@ -4586,30 +4593,40 @@ document.addEventListener('change', (e) => {
   }
 });
 
-/* ---------- 👑 管理员：用户管理（查看所有注册账户 + 只读课表） ---------- */
-async function showAdminUsers() {
-  const listView = document.getElementById('msgListView');
-  const threadView = document.getElementById('msgThreadView');
-  const footer = document.getElementById('msgFooter');
-  if (!listView) return;
-  document.getElementById('msgTitle').textContent = '👥 用户管理';
-  threadView.style.display = 'none';
-  listView.style.display = 'flex';
-  footer.style.display = 'none';
-  listView.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载中...</div>`;
+/* ---------- 👑 管理员：用户管理（独立弹窗，从「更多」菜单打开） ---------- */
+async function showAdminUsersModal() {
+  const old = document.getElementById('adminUsersModal');
+  if (old) old.remove();
+  const modal = document.createElement('div');
+  modal.id = 'adminUsersModal';
+  modal.setAttribute('style', 'display:flex; z-index:99999; position:fixed; inset:0; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; padding:16px;');
+  modal.innerHTML = `
+    <div style="background:#fff; border-radius:14px; width:100%; max-width:520px; max-height:85vh; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,0.3); display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid #eee;">
+        <h3 style="margin:0; font-size:17px;">👥 用户管理</h3>
+        <button id="adminUsersClose" style="background:none; border:none; font-size:20px; cursor:pointer; color:#888;">✕</button>
+      </div>
+      <div id="adminUsersBody" style="flex:1; overflow-y:auto; padding:14px 16px;"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('adminUsersClose').onclick = () => modal.remove();
+  const body = document.getElementById('adminUsersBody');
+  body.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载中...</div>`;
   let users = [];
   try {
     const { data, error } = await sb.rpc('list_all_users');
-    if (error) { listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">加载失败：${escapeHtml(error.message)}<br><br>请先在 Supabase 执行 supabase_message_board.sql</div>`; return; }
+    if (error) { body.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">加载失败：${escapeHtml(error.message)}<br><br>请先在 Supabase 执行 supabase_message_board.sql</div>`; return; }
     users = data || [];
   } catch (e) {
-    listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">加载失败</div>`;
+    body.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">加载失败</div>`;
     return;
   }
-  listView.innerHTML = `<div style="font-size:12px; color:#98a0b3;">共 ${users.length} 个注册账户</div>` + users.map(u => {
+  body.innerHTML = `<div style="font-size:12px; color:#98a0b3; margin-bottom:10px;">共 ${users.length} 个注册账户</div>` + users.map(u => {
     const isMe = u.id === currentUser.id;
     return `
-      <div style="display:flex; align-items:center; gap:10px; padding:12px; border:1px solid #eceef5; border-radius:12px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:10px; padding:12px; border:1px solid #eceef5; border-radius:12px; margin-bottom:8px; flex-wrap:wrap;">
         <div style="width:36px; height:36px; border-radius:50%; background:${isMe ? 'linear-gradient(135deg,#f6ad3c,#e8871e)' : 'linear-gradient(135deg,#5a6fd6,#6a4f9e)'}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;">${isMe ? '👑' : '👤'}</div>
         <div style="flex:1; min-width:140px;">
           <div style="font-size:14px; font-weight:600; color:#2c3550; word-break:break-all;">${escapeHtml(u.email || '')}${isMe ? '（我）' : ''}</div>
@@ -4619,29 +4636,26 @@ async function showAdminUsers() {
         <button class="au-tt" data-uid="${u.id}" data-email="${escapeHtml(u.email || '')}" style="padding:7px 12px; border:1px solid #dfe2eb; background:#fff; border-radius:9px; font-size:12.5px; cursor:pointer;">📚 查看课表</button>
       </div>`;
   }).join('');
-  listView.querySelectorAll('.au-msg').forEach(el => {
-    el.onclick = () => openMsgThread({ id: el.dataset.uid, email: el.dataset.email });
+  body.querySelectorAll('.au-msg').forEach(el => {
+    el.onclick = () => { modal.remove(); openMsgThread({ id: el.dataset.uid, email: el.dataset.email }); };
   });
-  listView.querySelectorAll('.au-tt').forEach(el => {
-    el.onclick = () => adminViewUserTimetables({ id: el.dataset.uid, email: el.dataset.email });
+  body.querySelectorAll('.au-tt').forEach(el => {
+    el.onclick = () => adminViewUserTimetablesInModal({ id: el.dataset.uid, email: el.dataset.email }, body);
   });
 }
 
-async function adminViewUserTimetables(user) {
-  const listView = document.getElementById('msgListView');
-  if (!listView) return;
-  document.getElementById('msgTitle').textContent = '📚 ' + user.email;
-  listView.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载课表中...</div>`;
+async function adminViewUserTimetablesInModal(user, body) {
+  body.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">加载课表中...</div>`;
   let tts = [];
   try {
     const { data, error } = await sb.from('timetables').select('id,name,data,saved_at,updated_at').eq('user_id', user.id).order('updated_at', { ascending: false });
-    if (error) { listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">读取失败：${escapeHtml(error.message)}</div>`; return; }
+    if (error) { body.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">读取失败：${escapeHtml(error.message)}</div>`; return; }
     tts = data || [];
   } catch (e) {
-    listView.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">读取失败</div>`;
+    body.innerHTML = `<div style="text-align:center; color:#e74c3c; font-size:13px; padding:24px;">读取失败</div>`;
     return;
   }
-  if (tts.length === 0) { listView.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">该账户暂无课表</div>`; return; }
+  if (tts.length === 0) { body.innerHTML = `<div style="text-align:center; color:#98a0b3; font-size:13px; padding:24px;">该账户暂无课表</div>`; return; }
   const renderTT = (tt) => {
     const courses = (tt.data && tt.data.courses) || [];
     const events = (tt.data && tt.data.events) || [];
@@ -4658,13 +4672,12 @@ async function adminViewUserTimetables(user) {
     const evList = events.length ? events.map(ev => `
       <div style="font-size:12px; color:#2c3550; padding:4px 0; border-bottom:1px dashed #eceef5;">📌 ${escapeHtml(ev.name || ev.title || '')} ${ev.date ? '（' + escapeHtml(ev.date) + '）' : ''} ${ev.start ? escapeHtml(ev.start) : ''}</div>`).join('') : '';
     return `
-      <div style="border:1px solid #eceef5; border-radius:12px; padding:12px; background:#fff;">
+      <div style="border:1px solid #eceef5; border-radius:12px; padding:12px; background:#fff; margin-bottom:12px;">
         <div style="font-size:14px; font-weight:700; color:#2c3550; margin-bottom:8px;">📕 ${escapeHtml(tt.name || '未命名课表')}</div>
         <div style="display:flex; gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch;">${dayCols}</div>
         ${evList ? `<div style="margin-top:10px;"><div style="font-size:12px; font-weight:700; color:#e8871e; margin-bottom:3px;">📅 考试 / 事项</div>${evList}</div>` : ''}
       </div>`;
-  };
-  listView.innerHTML = tts.map(renderTT).join('');
+  }).join('');
 }
 
 /* ================================================================
