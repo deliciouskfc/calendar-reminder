@@ -2,6 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<!-- 预连接 Supabase，省去首次 API 请求的 DNS/TLS 握手时间 -->
+<link rel="preconnect" href="https://ygzgdtfkitymxhxuyrjt.supabase.co" crossorigin>
+<link rel="dns-prefetch" href="https://ygzgdtfkitymxhxuyrjt.supabase.co">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#4f8ef7">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1307,13 +1310,15 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Supabase 库：优先本地同域加载（秒开 + SW 离线缓存），失败再回退 jsdelivr CDN -->
+<script src="./supabase-js.min.js"></script>
+<script>window.supabase || document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"><\/script>');</script>
 <script>
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.11.5';
-const APP_VERSION_CODE = 53;
+const APP_VERSION = '2.11.6';
+const APP_VERSION_CODE = 54;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1347,6 +1352,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.11.6', date: '2026-09-09', items: [
+    '⚡ 性能优化：Supabase 库改为本站同域托管 + 离线缓存，不再卡在 jsdelivr CDN 加载',
+    '🔗 新增 API 预连接，登录和云同步更快'
+  ]},
   { version: 'v2.11.5', date: '2026-09-09', items: [
     '📱 iPad/iPhone 上点击 PDF 等文件直接在 Safari 中预览打开（按钮显示「📂 打开」）',
     '📤 预览时可点右上角分享按钮「存储到文件」或用其他 App 打开'

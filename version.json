@@ -1,7 +1,7 @@
 {
-  "version": "2.11.5",
-  "versionCode": 53,
+  "version": "2.11.6",
+  "versionCode": 54,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "iPad/iPhone 上点击 PDF 等文件直接在 Safari 中预览打开（按钮显示为「📂 打开」），可边看边用分享按钮存储，不再走下载流程",
+  "updateLog": "性能优化：Supabase 库改为本站同域托管并加入离线缓存，不再依赖国内访问缓慢的 jsdelivr CDN；新增 API 预连接，登录/同步明显提速",
   "forceUpdate": false
 }
