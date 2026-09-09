@@ -1,7 +1,7 @@
 {
-  "version": "2.9.0",
-  "versionCode": 43,
+  "version": "2.9.1",
+  "versionCode": 44,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "开屏图标关联账户：登录后按上次登录账户显示自定义开屏图标，可在「更多」中上传，未上传默认 CUHK 校徽；日历改为左月历右当日详情布局",
+  "updateLog": "修复平板横屏日历过扁（左右两栏等高撑满）；课表工具栏新增「🔄 刷新课表」，并修复切换账号后仍显示上一个账号课表的问题（登录/刷新一律以云端为准）",
   "forceUpdate": false
 }

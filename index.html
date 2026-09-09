@@ -133,6 +133,7 @@
     padding: 18px 20px;
     background: #f3f5fa;
     align-items: stretch;
+    min-height: calc(100vh - 210px);
   }
   @media (max-width: 900px) {
     .main { grid-template-columns: minmax(0, 1.2fr) minmax(260px, 1fr); gap: 12px; padding: 12px; }
@@ -186,6 +187,8 @@
     border: 1px solid #eef0f5;
     border-radius: 14px;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
   .calendar-header {
     display: flex;
@@ -227,6 +230,10 @@
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: 4px;
+    flex: 1;
+    grid-auto-rows: 1fr;
+    align-content: stretch;
+    min-height: 360px;
   }
   .day {
     min-height: 72px;
@@ -1009,6 +1016,7 @@
         <div class="schedule-tools">
           <button class="btn-tool danger" id="clearCoursesBtn">🗑 退课</button>
           <button class="btn-tool" id="restoreCoursesBtn">➕ 加课</button>
+          <button class="btn-tool" id="refreshSchedBtn">🔄 刷新课表</button>
           <button class="btn-tool" id="undoBtn" style="display:none;">↩ 撤销</button>
           <div class="more-menu-wrap" id="moreMenuWrap">
             <button class="btn-tool" id="moreMenuBtn">☰ 更多 ▾</button>
@@ -1201,8 +1209,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.9.0';
-const APP_VERSION_CODE = 43;
+const APP_VERSION = '2.9.1';
+const APP_VERSION_CODE = 44;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1236,6 +1244,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.9.1', date: '2026-09-09', items: [
+    '📐 修复平板横屏日历过扁：左月历与右侧当日详情两栏等高撑满，日期格子 6 行均分，不再挤在顶部',
+    '🔄 课表工具栏新增「刷新课表」：一键强制从云端拉取当前账号课表与校历',
+    '🐛 修复切换账号登录后仍显示上一个账号课表的问题：登录与刷新一律以云端数据为准覆盖本机'
+  ]},
   { version: 'v2.9.0', date: '2026-09-09', items: [
     '🎨 开屏图标关联账户：登录后开屏动画显示该账户自己的图标，未上传则默认 CUHK 校徽；下次打开按"上一次登录的账户"显示',
     '「☰ 更多」新增「🖼 自定义开屏图标」：任选图片自动裁剪压缩上传，也可一键恢复默认',
@@ -2602,6 +2615,8 @@ document.getElementById('dropConfirmBtn').onclick = () => {
 };
 
 const addCourseOverlay = document.getElementById('addCourseOverlay');
+const _refreshSchedBtn = document.getElementById('refreshSchedBtn');
+if (_refreshSchedBtn) _refreshSchedBtn.onclick = () => forceRefreshSchedule();
 document.getElementById('restoreCoursesBtn').onclick = () => {
   hidePopup();
   // 默认值
@@ -3231,7 +3246,8 @@ async function loadAccountData() {
     }
     const savedActive = localStorage.getItem(ACTIVE_TT_KEY + currentUser.id);
     const target = timetables.find(t => t.id === savedActive) || timetables[0];
-    await switchTimetable(target.id, { silent: true });
+    // 登录/换账号一律以云端为准强制覆盖，避免本机残留上一个账号的课表
+    await applyTimetableFromCloud(target, { silent: true });
   } catch (e) {
     showToast('⚠️ 云端同步异常：' + (e.message || e));
   }
@@ -3259,6 +3275,50 @@ async function switchTimetable(id, opts) {
     showToast('📂 已切换到「' + tt.name + '」');
   }
   renderTimetableSwitcher();
+}
+
+// 强制以云端数据覆盖本地（登录/换账号/手动刷新时使用，杜绝显示成上一个账号的课表）
+async function applyTimetableFromCloud(tt, opts) {
+  activeTimetableId = tt.id;
+  localStorage.setItem(ACTIVE_TT_KEY + currentUser.id, tt.id);
+  events = (tt.data && tt.data.events) ? tt.data.events : [];
+  courses = (tt.data && tt.data.courses) ? tt.data.courses : [];
+  const ts = Number(tt.saved_at || (tt.data && tt.data.savedAt) || Date.now());
+  localStorage.setItem(LAST_SAVED_AT_KEY + tt.id, String(ts));
+  saveData();
+  renderCalendar(); renderEventsList(); renderSchedule();
+  renderTimetableSwitcher();
+  if (!opts || !opts.silent) showToast('📂 已加载「' + tt.name + '」');
+}
+
+// 🔄 刷新课表：强制从云端重新拉取当前账号课表与校历（解决换账号后仍显示旧课表）
+async function forceRefreshSchedule() {
+  if (!sb || !currentUser) { showToast('请先登录后再刷新课表'); return; }
+  const btn = document.getElementById('refreshSchedBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 刷新中…'; }
+  try {
+    const { data, error } = await sb.from('timetables')
+      .select('id,name,data,saved_at,updated_at')
+      .eq('user_id', currentUser.id)
+      .order('updated_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    timetables = data || [];
+    if (timetables.length === 0) {
+      events = []; courses = []; saveData();
+      renderCalendar(); renderEventsList(); renderSchedule(); renderTimetableSwitcher();
+      showToast('✅ 已刷新（当前账号暂无课表）');
+    } else {
+      const savedActive = localStorage.getItem(ACTIVE_TT_KEY + currentUser.id);
+      const target = timetables.find(t => t.id === savedActive) || timetables[0];
+      await applyTimetableFromCloud(target, { silent: true });
+      showToast('✅ 课表已刷新：' + target.name);
+    }
+    await loadCalendarFromCloud();
+  } catch (e) {
+    showToast('⚠️ 刷新失败：' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 刷新课表'; }
+  }
 }
 
 async function createTimetable(name, initialData) {
