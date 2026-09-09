@@ -1,7 +1,7 @@
 {
-  "version": "2.11.2",
-  "versionCode": 50,
+  "version": "2.11.3",
+  "versionCode": 51,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "紧急修复：v2.11.1 一处语法错误导致开屏卡死；新增独立兜底脚本，主脚本异常时开屏最多 6 秒自动隐藏",
-  "forceUpdate": true
+  "updateLog": "留言图片消息新增「⬇ 下载」按钮，可一键保存原图；统一文件/图片下载为 blob 方式，跨域也能正常下载",
+  "forceUpdate": false
 }
