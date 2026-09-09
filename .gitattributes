@@ -1,0 +1,9 @@
+# 第三方压缩库与二进制资源不做换行符转换
+*.min.js binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.apng binary
