@@ -1317,8 +1317,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.11.6';
-const APP_VERSION_CODE = 54;
+const APP_VERSION = '2.11.7';
+const APP_VERSION_CODE = 55;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -4642,14 +4642,45 @@ function isIOSDevice() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 async function downloadChatFile(url, name) {
-  // iOS/iPadOS Safari：图片/文档都直接用系统预览打开（PDF 可在 Safari 内阅读，再点分享存到文件/其他 App）
+  // iOS/iPadOS Safari：图片直接打开；文档带下载进度，完成后用本地 blob 预览（Supabase 文件在海外，大 PDF 直开白屏等待体验差）
   const looksImg = /\.(jpe?g|png|gif|webp|heic|bmp)$/i.test(name || '');
   if (isIOSDevice()) {
-    window.open(url, '_blank');
     if (looksImg) {
+      window.open(url, '_blank');
       showToast('🖼 图片已打开，长按图片选「存储图像」可存到相册');
-    } else {
-      showToast('📄 文件已打开，点右上角分享按钮可「存储到文件」或用其他 App 打开');
+      return;
+    }
+    // 文档：流式下载并显示进度，完成后用 blob 在 Safari 内预览
+    try {
+      showToast('📄 正在加载 0%…');
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const total = +(resp.headers.get('content-length') || 0);
+      const reader = resp.body.getReader();
+      const chunks = [];
+      let got = 0, lastPct = -1;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value); got += value.length;
+        if (total) {
+          const pct = Math.floor(got / total * 100);
+          if (pct >= lastPct + 10) {
+            lastPct = pct;
+            const mb = (got / 1048576).toFixed(1);
+            const tmb = total ? (total / 1048576).toFixed(1) : mb;
+            showToast(`📄 下载中 ${pct}%（${mb}/${tmb}MB）`);
+          }
+        }
+      }
+      const blob = new Blob(chunks, { type: resp.headers.get('content-type') || 'application/pdf' });
+      const bu = URL.createObjectURL(blob);
+      window.open(bu, '_blank');
+      showToast('✅ 文件已打开，点右上角分享可「存储到文件」');
+      setTimeout(() => URL.revokeObjectURL(bu), 120000);
+    } catch (e) {
+      window.open(url, '_blank');
+      showToast('📄 文件已在新页面打开，加载需要一点时间');
     }
     return;
   }
