@@ -116,3 +116,50 @@ select u.id, 'https://deliciouskfc.github.io/calendar-reminder/icon-shu.png', no
 from auth.users u
 where lower(u.email) = '3057278447@qq.com'
 on conflict (user_id) do update set icon_url = excluded.icon_url, updated_at = now();
+
+-- ============================================================
+-- 📎 课件文件云存储（v2.10.0）
+-- 电脑 / 手机 / iPad 三端通用：文件存 Supabase Storage，按账户隔离
+-- 替代旧的 GitHub 仓库 Contents API（旧方案 1MB 上限、需 Token、易失败）
+-- ============================================================
+
+-- 1. 课件元数据表（文件本体在 Storage，这里只存清单）
+create table if not exists public.courseware_files (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  course_key text not null default '',   -- 归一化课程 section，如 CSC1001L02
+  name text not null,
+  type text not null default '',
+  size bigint not null default 0,
+  created_at timestamptz not null default now()
+);
+alter table public.courseware_files enable row level security;
+
+drop policy if exists "courseware_select_own" on public.courseware_files;
+create policy "courseware_select_own" on public.courseware_files
+  for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "courseware_insert_own" on public.courseware_files;
+create policy "courseware_insert_own" on public.courseware_files
+  for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "courseware_delete_own" on public.courseware_files;
+create policy "courseware_delete_own" on public.courseware_files
+  for delete to authenticated using (auth.uid() = user_id);
+
+-- 2. 私有存储桶（对象路径 {user_id}/{file_id}）
+insert into storage.buckets (id, name, public)
+values ('courseware', 'courseware', false)
+on conflict (id) do nothing;
+
+-- 3. 存储桶 RLS：用户只能读写自己 user_id 前缀下的对象
+drop policy if exists "courseware_storage_read" on storage.objects;
+create policy "courseware_storage_read" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'courseware' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "courseware_storage_insert" on storage.objects;
+create policy "courseware_storage_insert" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'courseware' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "courseware_storage_delete" on storage.objects;
+create policy "courseware_storage_delete" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'courseware' and (storage.foldername(name))[1] = auth.uid()::text);

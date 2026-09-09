@@ -1299,8 +1299,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.9.2';
-const APP_VERSION_CODE = 45;
+const APP_VERSION = '2.10.0';
+const APP_VERSION_CODE = 46;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1334,6 +1334,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.10.0', date: '2026-09-09', items: [
+    '☁️ 课件云存储改用 Supabase 云端：随账户自动跨设备同步，无需 GitHub Token，单文件支持到 50MB',
+    '🐛 修复上传课件「同步到云端失败」：旧 GitHub 仓库接口有 1MB 上限且需手动配置 Token，现已彻底移除',
+    '🖥 电脑端网页同步新增「📎 课件文件」上传入口，三端（电脑/手机/iPad）课件互通'
+  ]},
   { version: 'v2.9.2', date: '2026-09-09', items: [
     '🔄 新增横竖屏自适应：平板横屏左右双栏等高铺满，竖屏自动切为单列卡片布局（日期格子不再被拉得超高）',
     '🐛 修复账户菜单按钮在课表为空时不显示的问题——现在只要登录即可见'
@@ -1727,136 +1732,84 @@ function fileRecordKey(f) {
 }
 
 /* ================================================================
-   云端跨设备同步（GitHub 仓库作为存储，免费）
-   - cloud-files/{id}  文件二进制；cloud-files/manifest.json  清单
-   - 配置 Token 的设备：上传/删除（Contents 读写权限）
-   - 其他设备：从 raw.githubusercontent.com 免登录自动下载
+   云端课件同步（Supabase Storage + courseware_files 表，v2.10.0）
+   - 存储桶 courseware（私有，RLS 按用户隔离），对象路径 {user_id}/{file_id}
+   - 元数据表 courseware_files：id/user_id/course_key/name/type/size/created_at
+   - 添加课件即上传；登录后与点击「☁️ 云同步」时自动拉取本机缺失文件
+   - 未登录：仅保存在本机 IndexedDB
 ================================================================ */
-const CLOUD_REPO = 'deliciouskfc/calendar-reminder';
-const CLOUD_DIR = 'cloud-files';
-const GH_TOKEN_KEY = 'calendar_gh_token';
-let cloudManifest = null;
-let cloudSyncing = false;
+const CW_BUCKET = 'courseware';
 
-function ghToken() { return localStorage.getItem(GH_TOKEN_KEY) || ''; }
-function ghHeaders(tok) { return { 'Authorization': 'Bearer ' + (tok || ghToken()), 'Accept': 'application/vnd.github+json' }; }
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
+async function cwList() {
+  const { data, error } = await sb.from('courseware_files')
+    .select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+async function cwUploadOne(rec) {
+  const path = currentUser.id + '/' + rec.id;
+  const { error: upErr } = await sb.storage.from(CW_BUCKET).upload(path, rec.blob, {
+    contentType: rec.type || 'application/octet-stream',
+    upsert: true, cacheControl: '3600'
   });
-}
-async function fetchCloudManifest() {
-  try {
-    const res = await fetch(`https://raw.githubusercontent.com/${CLOUD_REPO}/main/${CLOUD_DIR}/manifest.json?t=` + Date.now(), { cache: 'no-store' });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (e) { return null; }
-}
-async function ensureCloudManifest() {
-  if (!cloudManifest) cloudManifest = await fetchCloudManifest() || { files: [] };
-  return cloudManifest;
-}
-async function writeCloudManifest(entries) {
-  const url = `https://api.github.com/repos/${CLOUD_REPO}/contents/${CLOUD_DIR}/manifest.json`;
-  const res0 = await fetch(url, { headers: ghHeaders() });
-  let sha = null;
-  if (res0.ok) sha = (await res0.json()).sha;
-  const bytes = new TextEncoder().encode(JSON.stringify({ files: entries }));
-  let bin = ''; bytes.forEach(b => bin += String.fromCharCode(b));
-  const body = { message: 'chore: update cloud manifest', branch: 'main', content: btoa(bin) };
-  if (sha) body.sha = sha;
-  const res = await fetch(url, { method: 'PUT', headers: { ...ghHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error('写清单失败 ' + res.status);
-}
-async function putCloudFile(id, b64) {
-  const res = await fetch(`https://api.github.com/repos/${CLOUD_REPO}/contents/${CLOUD_DIR}/${id}`, {
-    method: 'PUT',
-    headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: 'chore: upload courseware ' + id, branch: 'main', content: b64 })
+  if (upErr) throw new Error(upErr.message);
+  const { error: dbErr } = await sb.from('courseware_files').insert({
+    id: rec.id, user_id: currentUser.id, course_key: rec.fileKey || '',
+    name: rec.name, type: rec.type || '', size: rec.size,
+    created_at: new Date(rec.addedAt).toISOString()
   });
-  if (!res.ok) throw new Error('上传失败 ' + res.status);
+  if (dbErr) throw new Error(dbErr.message);
 }
-async function deleteCloudFile(id) {
-  const url = `https://api.github.com/repos/${CLOUD_REPO}/contents/${CLOUD_DIR}/${id}`;
-  const res0 = await fetch(url, { headers: ghHeaders() });
-  if (res0.status === 404) return;
-  if (!res0.ok) throw new Error('删除失败 ' + res0.status);
-  const j = await res0.json();
-  const res = await fetch(url, {
-    method: 'DELETE',
-    headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: 'chore: delete courseware ' + id, branch: 'main', sha: j.sha })
-  });
-  if (!res.ok) throw new Error('删除失败 ' + res.status);
+async function cwDeleteOne(id) {
+  try { await sb.storage.from(CW_BUCKET).remove([currentUser.id + '/' + id]); } catch (e) {}
+  await sb.from('courseware_files').delete().eq('id', id).eq('user_id', currentUser.id);
 }
-// 把本地未上云的文件全部上传（返回 {uploaded}；toast 由调用方处理）
-async function uploadPendingToCloud() {
-  if (!ghToken() || cloudSyncing) return { uploaded: 0 };
-  const files = await dbGetAllFiles();
-  const mf = await ensureCloudManifest();
-  const known = new Set((mf.files || []).map(f => f.id));
-  const pending = files.filter(f => !known.has(f.id));
-  if (!pending.length) return { uploaded: 0 };
-  cloudSyncing = true;
-  try {
-    for (const f of pending) {
-      await putCloudFile(f.id, await blobToBase64(f.blob));
-      mf.files.push({ id: f.id, fileKey: fileRecordKey(f), name: f.name, type: f.type, size: f.size, uploadedAt: Date.now() });
-    }
-    await writeCloudManifest(mf.files);
-    return { uploaded: pending.length };
-  } finally { cloudSyncing = false; }
+async function cwDownloadOne(meta) {
+  const { data, error } = await sb.storage.from(CW_BUCKET).download(currentUser.id + '/' + meta.id);
+  if (error) throw new Error(error.message);
+  return data;
 }
-// 从云端下载本机没有的文件（无需 Token）
-async function syncFromCloud() {
-  if (cloudSyncing) return { downloaded: 0, total: 0 };
-  cloudSyncing = true;
-  try {
-    const mf = await fetchCloudManifest();
-    cloudManifest = mf;
-    if (!mf || !Array.isArray(mf.files)) return { downloaded: 0, total: 0 };
-    const local = await dbGetAllFiles();
-    const have = new Set(local.map(f => f.id));
-    const missing = mf.files.filter(f => !have.has(f.id));
-    if (!missing.length) return { downloaded: 0, total: mf.files.length };
-    let ok = 0;
-    for (const m of missing) {
-      try {
-        const res = await fetch(`https://raw.githubusercontent.com/${CLOUD_REPO}/main/${CLOUD_DIR}/${m.id}?t=` + Date.now(), { cache: 'no-store' });
-        if (!res.ok) continue;
-        const blob = await res.blob();
-        await dbAddFiles([{
-          id: m.id, courseId: '', fileKey: m.fileKey || '',
-          name: m.name, type: m.type || '', size: m.size,
-          blob, addedAt: m.uploadedAt || Date.now(), cloud: true
-        }]);
-        ok++;
-      } catch (e) { /* 单个失败跳过 */ }
-    }
-    if (ok) { attachCountsDirty = true; renderSchedule(); if (fileSheetCourse) await renderFileList(); }
-    return { downloaded: ok, total: mf.files.length };
-  } finally { cloudSyncing = false; }
+
+// 拉取云端课件元数据并下载本机缺失文件
+async function syncCoursewareFromCloud() {
+  if (!sb || !currentUser) return { downloaded: 0, total: 0 };
+  const rows = await cwList();
+  const local = await dbGetAllFiles();
+  const have = new Set(local.map(f => f.id));
+  const missing = rows.filter(r => !have.has(r.id));
+  let ok = 0;
+  for (const m of missing) {
+    try {
+      const blob = await cwDownloadOne(m);
+      await dbAddFiles([{
+        id: m.id, courseId: '', fileKey: m.course_key || '',
+        name: m.name, type: m.type || '', size: m.size || blob.size,
+        blob, addedAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(), cloud: true
+      }]);
+      ok++;
+    } catch (e) { /* 单个失败跳过 */ }
+  }
+  if (ok) {
+    attachCountsDirty = true;
+    renderSchedule();
+    if (fileSheetCourse) await renderFileList();
+  }
+  return { downloaded: ok, total: rows.length };
 }
-// 主界面一键云同步：先上传本机新增（需 Token），再下载云端缺失
+
+// ☁️ 云同步按钮：登录后拉取云端课件
 let cloudSyncAllBusy = false;
 async function cloudSyncAll() {
   if (cloudSyncAllBusy) return;
+  if (!sb || !currentUser) { showToast('请先登录账户后再云同步课件'); return; }
   cloudSyncAllBusy = true;
   const btn = document.getElementById('cloudSyncBtn');
   if (btn) btn.classList.add('syncing');
   try {
-    let uploaded = 0;
-    if (ghToken()) uploaded = (await uploadPendingToCloud()).uploaded;
-    const r = await syncFromCloud();
-    const parts = [];
-    if (uploaded) parts.push(`上传 ${uploaded} 个`);
-    if (r.downloaded) parts.push(`下载 ${r.downloaded} 个`);
-    if (parts.length) showToast('✅ 云同步完成：' + parts.join('，'));
-    else if (!ghToken() && !r.total) showToast('☁️ 云端暂无课件（在课件面板可连接 GitHub 上传）');
-    else showToast('✅ 课件已是最新');
+    const r = await syncCoursewareFromCloud();
+    if (r.downloaded) showToast(`✅ 云同步完成：下载 ${r.downloaded} 个课件`);
+    else if (r.total) showToast('✅ 课件已是最新');
+    else showToast('☁️ 云端暂无课件，在课程菜单「📎 课件文件」中添加');
   } catch (e) {
     showToast('⚠️ 同步失败：' + (e.message || '请检查网络'));
   } finally {
@@ -1865,56 +1818,18 @@ async function cloudSyncAll() {
   }
 }
 
-// 连接 / 断开 GitHub Token
-async function connectCloud() {
-  const t = prompt('粘贴 GitHub Token（对 calendar-reminder 仓库有 Contents 读写权限）：\n\n生成方法：GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token → 仓库选 calendar-reminder → Permissions 里 Contents 选 Read and write');
-  if (t === null) return;
-  if (!t.trim()) { localStorage.removeItem(GH_TOKEN_KEY); showToast('已断开云同步'); renderCloudBar(); return; }
-  try {
-    const res = await fetch(`https://api.github.com/repos/${CLOUD_REPO}`, { headers: ghHeaders(t.trim()) });
-    if (!res.ok) {
-      showToast(res.status === 401 ? '❌ Token 无效' : (res.status === 403 ? '❌ Token 无仓库 Contents 权限' : '❌ 验证失败（' + res.status + '）'));
-      return;
-    }
-    localStorage.setItem(GH_TOKEN_KEY, t.trim());
-    showToast('✅ 已连接云同步');
-    renderCloudBar();
-    uploadPendingToCloud()
-      .then(r => { if (r.uploaded) showToast(`✅ 已上传 ${r.uploaded} 个文件到云端`); })
-      .catch(e => showToast('⚠️ ' + e.message));
-  } catch (e) { showToast('⚠️ 验证失败，请检查网络'); }
-}
 function renderCloudBar() {
   const bar = document.getElementById('cloudBar');
   if (!bar) return;
-  if (ghToken()) {
-    bar.innerHTML = `
-      <div class="cloud-info on">☁️ 已连接 GitHub · 添加的课件自动上传，其他设备打开本页自动下载</div>
-      <div class="cloud-btns">
-        <button class="cloud-btn" data-act="sync">⬇️ 立即同步</button>
-        <button class="cloud-btn warn" data-act="disconnect">断开</button>
-      </div>`;
+  if (sb && currentUser) {
+    bar.innerHTML = `<div class="cloud-info on">☁️ 已登录账户 <b>${escapeHtml(currentUser.email)}</b> · 添加的课件自动上传云端，其他设备登录同一账户自动同步</div>
+      <div class="cloud-btns"><button class="cloud-btn" data-act="sync">⬇️ 立即同步云端课件</button></div>`;
   } else {
-    bar.innerHTML = `
-      <div class="cloud-info">☁️ 跨设备同步未开启 · 连接后在任意设备添加的课件，手机 / iPad 自动同步</div>
-      <div class="cloud-btns">
-        <button class="cloud-btn" data-act="connect">连接 GitHub</button>
-        <button class="cloud-btn" data-act="sync">⬇️ 同步</button>
-      </div>`;
+    bar.innerHTML = `<div class="cloud-info">☁️ 未登录：课件仅保存在本机；登录账户后可跨设备自动同步</div>`;
   }
-  bar.querySelectorAll('.cloud-btn').forEach(b => b.addEventListener('click', async (ev) => {
+  bar.querySelectorAll('.cloud-btn').forEach(b => b.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    const act = ev.currentTarget.dataset.act;
-    if (act === 'connect') { connectCloud(); return; }
-    if (act === 'disconnect') { localStorage.removeItem(GH_TOKEN_KEY); showToast('已断开云同步'); renderCloudBar(); return; }
-    if (act === 'sync') {
-      showToast('☁️ 正在同步…');
-      try {
-        const r = await syncFromCloud();
-        showToast(r.downloaded ? `⬇️ 已下载 ${r.downloaded} 个课件` : (r.total ? '✅ 云端课件已最新' : '☁️ 云端暂无课件'));
-        if (fileSheetCourse) await renderFileList();
-      } catch (e) { showToast('⚠️ 同步失败，请检查网络'); }
-    }
+    cloudSyncAll();
   }));
 }
 
@@ -1994,22 +1909,15 @@ async function renderFileList() {
     listEl.querySelectorAll('.file-del').forEach(btn => {
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
-        if (!confirm('删除该课件文件？（已上云的会在所有设备删除）')) return;
-        await dbDeleteFile(btn.dataset.del);
+        if (!confirm('删除该课件文件？（云端与所有设备都会删除）')) return;
+        const fid = btn.dataset.del;
+        await dbDeleteFile(fid);
+        if (sb && currentUser) {
+          try { await cwDeleteOne(fid); } catch (e) { showToast('⚠️ 云端删除失败：' + e.message); }
+        }
         attachCountsDirty = true;
         renderSchedule();
         await renderFileList();
-        // 云端同步删除
-        if (ghToken()) {
-          try {
-            await deleteCloudFile(btn.dataset.del);
-            const mf = await ensureCloudManifest();
-            mf.files = (mf.files || []).filter(x => x.id !== btn.dataset.del);
-            await writeCloudManifest(mf.files);
-          } catch (e) { showToast('⚠️ 云端删除失败：' + e.message); }
-        } else if (cloudManifest && (cloudManifest.files || []).some(x => x.id === btn.dataset.del)) {
-          showToast('⚠️ 已从本机删除（未连接云端，其他设备仍会同步此文件）');
-        }
       });
     });
   }
@@ -2038,8 +1946,8 @@ filePickInput.addEventListener('change', async () => {
   if (!files.length || !fileSheetCourse) return;
   const records = [];
   for (const f of files) {
-    if (f.size > 100 * 1024 * 1024) {
-      alert(`"${f.name}" 超过 100MB，已跳过`);
+    if (f.size > 50 * 1024 * 1024) {
+      alert(`"${f.name}" 超过 50MB，已跳过`);
       continue;
     }
     records.push({
@@ -2054,10 +1962,17 @@ filePickInput.addEventListener('change', async () => {
   attachCountsDirty = true;
   renderSchedule();
   await renderFileList();
-  // 已连接云同步 → 自动上传
-  if (ghToken()) uploadPendingToCloud()
-    .then(r => { if (r.uploaded) showToast('✅ 已同步到云端，其他设备可下载'); })
-    .catch(e => showToast('⚠️ 云端上传失败：' + e.message));
+  // 登录 → 自动上传 Supabase 云端；未登录 → 仅保存在本机
+  if (sb && currentUser) {
+    let ok = 0, fail = 0;
+    for (const rec of records) {
+      try { await cwUploadOne(rec); ok++; } catch (e) { fail++; }
+    }
+    if (ok) showToast(`✅ ${ok} 个课件已上传云端，其他设备登录后可同步`);
+    if (fail) showToast('⚠️ 部分课件上传失败（可能超过 50MB 或网络异常）');
+  } else {
+    showToast('📱 课件已保存在本机（登录账户后可云端同步）');
+  }
 });
 document.getElementById('fileCloseBtn').addEventListener('click', () => {
   document.getElementById('fileOverlay').classList.remove('active');
@@ -3225,10 +3140,7 @@ renderSchedule();
 updateReminderStatus();
 setInterval(checkReminders, 15000);
 checkReminders();
-// 启动时后台同步云端课件（无需 Token）
-syncFromCloud().then(r => {
-  if (r && r.downloaded) showToast('⬇️ 已从云端同步 ' + r.downloaded + ' 个课件');
-}).catch(() => {});
+// 课件云同步在账户会话恢复后由 loadAccountData() 自动触发（Supabase 按账户隔离）
 
 /* ================================================================
    账户系统（Supabase）：登录 / 注册 / 每会话解锁 / 云端同步
@@ -3623,8 +3535,8 @@ function openTutorial() {
         <p style="margin:0 0 10px;">工具栏「☰ 更多」菜单可切换/新建/重命名/删除课表。每个课表独立保存到云端。</p>
         <h4 style="margin:10px 0 4px; font-size:15px;">📎 课件文件</h4>
         <p style="margin:0 0 10px;">点击课程块 → 「📎 课件文件」可上传 PDF/图片等。同名课程（如 CSC 1001-L02 的周一/周三）共享同一批课件。</p>
-        <h4 style="margin:10px 0 4px; font-size:15px;">☁️ 云同步</h4>
-        <p style="margin:0 0 10px;">点击「☁️ 云同步」一键上传本地课件并下载云端缺失课件。需先在课件弹窗里配置 GitHub Token。</p>
+        <h4 style="margin:10px 0 4px; font-size:15px;">☁️ 课件云同步</h4>
+        <p style="margin:0 0 10px;">登录账户后，添加的课件自动上传云端，其他设备（手机 / iPad / 电脑）登录同一账户即可同步，无需任何配置。</p>
         <h4 style="margin:10px 0 4px; font-size:15px;">📅 校历设置</h4>
         <p style="margin:0 0 10px;">「☰ 更多」→「📅 校历设置」可添加/删除节假日。校历数据保存在云端，只影响当前账户。</p>
         <h4 style="margin:10px 0 4px; font-size:15px;">🔐 账户与密码</h4>
@@ -3776,6 +3688,7 @@ async function loadAccountData() {
         courses: shouldImport ? [...courses] : [],
         savedAt: Date.now()
       });
+      syncCoursewareFromCloud().catch(() => {});
       return;
     }
     // 选 active：localStorage 记录的，否则最新一行
@@ -3783,6 +3696,8 @@ async function loadAccountData() {
     const target = timetables.find(t => t.id === savedActive) || timetables[0];
     // 登录/换账号一律以云端为准强制覆盖，避免本机残留上一个账号的课表
     await applyTimetableFromCloud(target, { silent: true });
+    // 拉取该账户云端课件到本机
+    syncCoursewareFromCloud().catch(() => {});
   } catch (e) {
     showToast('⚠️ 云端同步异常：' + (e.message || e));
   }
@@ -3849,6 +3764,7 @@ async function forceRefreshSchedule() {
       showToast('✅ 课表已刷新：' + target.name);
     }
     await loadCalendarFromCloud();
+    await syncCoursewareFromCloud();
   } catch (e) {
     showToast('⚠️ 刷新失败：' + (e.message || e));
   } finally {
@@ -3982,10 +3898,14 @@ async function pushTimetableToCloud() {
 }
 
 // （仅手机版）账户主人改课表后，同步仓库 schedule.json 供 GitHub Actions 提醒推送使用
+// 注意：这是微信提醒功能专用的 GitHub Token（与课件云同步无关，课件已改用 Supabase Storage）
+const GH_REMINDER_REPO = 'deliciouskfc/calendar-reminder';
+function ghReminderToken() { return localStorage.getItem('calendar_gh_token') || ''; }
+function ghReminderHeaders() { return { 'Authorization': 'Bearer ' + ghReminderToken(), 'Accept': 'application/vnd.github+json' }; }
 async function syncScheduleJsonToRepo() {
-  if (!ghToken()) return;
+  if (!ghReminderToken()) return;
   try {
-    const res = await fetch(`https://api.github.com/repos/${CLOUD_REPO}/contents/schedule.json`, { headers: ghHeaders() });
+    const res = await fetch(`https://api.github.com/repos/${GH_REMINDER_REPO}/contents/schedule.json`, { headers: ghReminderHeaders() });
     if (!res.ok) return;
     const j = await res.json();
     const b64 = (j.content || '').replace(/\s/g, '');
@@ -3994,9 +3914,9 @@ async function syncScheduleJsonToRepo() {
     cur.courses = courses.map(c => ({ name: c.name, weekday: c.weekday, start: c.start, end: c.end, location: c.location || '', type: c.type || 'Lecture' }));
     const body = JSON.stringify(cur, null, 2);
     const b64out = btoa(String.fromCharCode(...new TextEncoder().encode(body)));
-    const put = await fetch(`https://api.github.com/repos/${CLOUD_REPO}/contents/schedule.json`, {
+    const put = await fetch(`https://api.github.com/repos/${GH_REMINDER_REPO}/contents/schedule.json`, {
       method: 'PUT',
-      headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+      headers: { ...ghReminderHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'chore: sync schedule from app', branch: 'main', content: b64out, sha: j.sha })
     });
     if (put.ok) showToast('☁️ 微信提醒课表已同步');

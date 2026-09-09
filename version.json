@@ -1,7 +1,7 @@
 {
-  "version": "2.9.2",
-  "versionCode": 45,
+  "version": "2.10.0",
+  "versionCode": 46,
   "downloadUrl": "https://deliciouskfc.github.io/calendar-reminder/app-release-signed.apk",
-  "updateLog": "新增横竖屏自适应：平板横屏左右双栏等高、竖屏单列卡片化；修复电脑端「自定义开屏图标」等账户按钮在无课表时不显示的问题（登录即可见）",
+  "updateLog": "课件文件大升级：电脑端新增「📎 课件文件」上传（PDF/PPT/图片等）；课件云存储改用 Supabase 云端（随账户自动同步、免 Token、支持大文件），修复手机端上传同步失败问题",
   "forceUpdate": false
 }

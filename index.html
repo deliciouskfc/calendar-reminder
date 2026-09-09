@@ -852,6 +852,58 @@
     font-size: 9px;
   }
 
+  /* ===== 课件文件 ===== */
+  .cc-file-badge {
+    position: absolute; left: 3px; top: 2px;
+    font-size: 9px; line-height: 1; pointer-events: none;
+    background: rgba(255,255,255,0.75); border-radius: 6px; padding: 1px 3px;
+  }
+  .file-list { max-height: 50vh; overflow-y: auto; }
+  .file-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 12px; border-bottom: 1px solid #f0f0f5;
+    cursor: pointer; transition: background 0.12s;
+  }
+  .file-item:hover { background: #f4f6fa; }
+  .file-item:last-child { border-bottom: none; }
+  .file-icon {
+    width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #fff;
+  }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { font-size: 13px; font-weight: 600; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-meta { font-size: 11px; color: #95a5a6; margin-top: 1px; }
+  .file-del {
+    width: 30px; height: 30px; border: none; border-radius: 7px;
+    background: #fdecea; color: #e74c3c; font-size: 14px;
+    flex-shrink: 0; cursor: pointer;
+  }
+  .file-del:hover { background: #f9d2ce; }
+  .file-empty { padding: 26px 12px; text-align: center; color: #b2bec3; font-size: 13px; line-height: 1.8; }
+  .storage-info { margin-top: 10px; font-size: 11px; color: #95a5a6; text-align: center; }
+  .btn-file-add {
+    width: 100%; margin-top: 12px; padding: 12px;
+    border: 2px dashed #b8c0cf; border-radius: 10px;
+    background: #fafbfd; color: #5a6b85; font-size: 14px; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-file-add:hover { background: #f0f3f8; }
+  .cloud-bar {
+    margin-top: 12px; padding: 10px 12px;
+    background: #f4f7ff; border: 1px solid #e3e9fb; border-radius: 10px;
+  }
+  .cloud-info { font-size: 12px; color: #5a6b85; line-height: 1.7; }
+  .cloud-info.on { color: #2f7d4f; }
+  .cloud-btns { display: flex; gap: 8px; margin-top: 8px; }
+  .cloud-btn {
+    flex: 1; padding: 9px 6px;
+    border: none; border-radius: 8px;
+    background: #e6ebfa; color: #3d4f9e;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .cloud-btn:hover { filter: brightness(0.94); }
+
   /* ===== 开屏动画 ===== */
   .splash-screen {
     position: fixed;
@@ -1189,6 +1241,22 @@
   </div>
 </div>
 
+<!-- 课件文件管理弹窗 -->
+<div class="modal-overlay" id="fileOverlay">
+  <div class="modal" style="max-width:520px;">
+    <h3 id="fileSheetTitle">📎 课件文件</h3>
+    <div class="file-list" id="fileList"></div>
+    <button class="btn-file-add" id="fileAddBtn">＋ 添加课件文件（可多选）</button>
+    <input type="file" id="filePickInput" multiple style="display:none"
+           accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.zip,.rar,.7z,image/*,audio/*,video/*">
+    <div class="storage-info" id="storageInfo"></div>
+    <div class="cloud-bar" id="cloudBar"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="fileCloseBtn">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- 更新日志弹窗 -->
 <div class="modal-overlay" id="changelogOverlay">
   <div class="modal">
@@ -1209,8 +1277,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.9.2';
-const APP_VERSION_CODE = 45;
+const APP_VERSION = '2.10.0';
+const APP_VERSION_CODE = 46;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1244,6 +1312,11 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.10.0', date: '2026-09-09', items: [
+    '🖥 电脑端新增「📎 课件文件」：点击课程块即可上传 PDF / PPT / DOC / 图片等，与手机端功能一致',
+    '☁️ 课件云存储改用 Supabase 云端：随账户自动跨设备同步，无需 GitHub Token，单文件支持到 50MB',
+    '🐛 修复手机端上传课件「同步到云端失败」：旧 GitHub 仓库接口有 1MB 上限且需手动配置 Token，现已彻底移除'
+  ]},
   { version: 'v2.9.2', date: '2026-09-09', items: [
     '🔄 新增横竖屏自适应：平板横屏左右双栏等高铺满，竖屏自动切为单列卡片布局（日期格子不再被拉得超高）',
     '🐛 修复电脑端「🖼 自定义开屏图标」等账户按钮在课表为空时不显示的问题——现在只要登录即可见'
@@ -1578,6 +1651,7 @@ function loadData() {
 }
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ events, courses }));
+  pruneOrphanFiles();
   if (sb && currentUser) scheduleCloudPush();   // 已登录 → 防抖推送到云端
 }
 
@@ -2002,6 +2076,7 @@ function renderSchedule() {
   });
 
   renderLegend();
+  decorateAttachmentBadges();
 }
 
 function renderLegend() {
@@ -2342,6 +2417,297 @@ function saveItem() {
 }
 
 /* ================================================================
+   课件文件（IndexedDB 本地 + Supabase Storage 云端，v2.10.0）
+   - 本地：IndexedDB 存文件二进制，按课程 section 关联
+   - 云端：存储桶 courseware（私有，RLS 按用户隔离），路径 {user_id}/{file_id}
+   - 添加即上传；登录后自动拉取本机缺失文件
+================================================================ */
+const FILE_DB = 'calendar_files_v1';
+const FILE_STORE = 'files';
+function openFileDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FILE_DB, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(FILE_STORE, { keyPath: 'id' }); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function fileDb(mode, fn) {
+  const db = await openFileDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(FILE_STORE, mode);
+    const req = fn(tx.objectStore(FILE_STORE));
+    tx.oncomplete = () => { db.close(); resolve(req && req.result); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+const dbAddFiles = (records) => fileDb('readwrite', st => { records.forEach(r => st.put(r)); });
+const dbGetAllFiles = () => fileDb('readonly', st => st.getAll());
+const dbDeleteFile = (id) => fileDb('readwrite', st => st.delete(id));
+
+// 课件按"课程 section"关联：同一 section 的所有时间段共享课件
+function courseKey(c) {
+  return ((c && c.name) || '').toUpperCase().replace(/[\s\-_（）()]/g, '');
+}
+function fileRecordKey(f) {
+  if (f.fileKey) return f.fileKey;
+  const c = courses.find(x => x.id === f.courseId);
+  return c ? courseKey(c) : '';
+}
+
+const CW_BUCKET = 'courseware';
+async function cwList() {
+  const { data, error } = await sb.from('courseware_files')
+    .select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+async function cwUploadOne(rec) {
+  const path = currentUser.id + '/' + rec.id;
+  const { error: upErr } = await sb.storage.from(CW_BUCKET).upload(path, rec.blob, {
+    contentType: rec.type || 'application/octet-stream',
+    upsert: true, cacheControl: '3600'
+  });
+  if (upErr) throw new Error(upErr.message);
+  const { error: dbErr } = await sb.from('courseware_files').insert({
+    id: rec.id, user_id: currentUser.id, course_key: rec.fileKey || '',
+    name: rec.name, type: rec.type || '', size: rec.size,
+    created_at: new Date(rec.addedAt).toISOString()
+  });
+  if (dbErr) throw new Error(dbErr.message);
+}
+async function cwDeleteOne(id) {
+  try { await sb.storage.from(CW_BUCKET).remove([currentUser.id + '/' + id]); } catch (e) {}
+  await sb.from('courseware_files').delete().eq('id', id).eq('user_id', currentUser.id);
+}
+async function cwDownloadOne(meta) {
+  const { data, error } = await sb.storage.from(CW_BUCKET).download(currentUser.id + '/' + meta.id);
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+let attachCountsDirty = true;
+async function syncCoursewareFromCloud() {
+  if (!sb || !currentUser) return { downloaded: 0, total: 0 };
+  const rows = await cwList();
+  const local = await dbGetAllFiles();
+  const have = new Set(local.map(f => f.id));
+  const missing = rows.filter(r => !have.has(r.id));
+  let ok = 0;
+  for (const m of missing) {
+    try {
+      const blob = await cwDownloadOne(m);
+      await dbAddFiles([{
+        id: m.id, courseId: '', fileKey: m.course_key || '',
+        name: m.name, type: m.type || '', size: m.size || blob.size,
+        blob, addedAt: m.created_at ? new Date(m.created_at).getTime() : Date.now(), cloud: true
+      }]);
+      ok++;
+    } catch (e) { /* 单个失败跳过 */ }
+  }
+  if (ok) {
+    attachCountsDirty = true;
+    renderSchedule();
+    if (fileSheetCourse) await renderFileList();
+  }
+  return { downloaded: ok, total: rows.length };
+}
+
+async function cloudSyncAll() {
+  if (!sb || !currentUser) { showToast('请先登录账户后再云同步课件'); return; }
+  try {
+    const r = await syncCoursewareFromCloud();
+    if (r.downloaded) showToast(`✅ 云同步完成：下载 ${r.downloaded} 个课件`);
+    else if (r.total) showToast('✅ 课件已是最新');
+    else showToast('☁️ 云端暂无课件，在课程菜单「📎 课件文件」中添加');
+  } catch (e) {
+    showToast('⚠️ 同步失败：' + (e.message || '请检查网络'));
+  }
+}
+
+function renderCloudBar() {
+  const bar = document.getElementById('cloudBar');
+  if (!bar) return;
+  if (sb && currentUser) {
+    bar.innerHTML = `<div class="cloud-info on">☁️ 已登录账户 <b>${escapeHtml(currentUser.email)}</b> · 添加的课件自动上传云端，其他设备登录同一账户自动同步</div>
+      <div class="cloud-btns"><button class="cloud-btn" data-act="sync">⬇️ 立即同步云端课件</button></div>`;
+  } else {
+    bar.innerHTML = `<div class="cloud-info">☁️ 未登录：课件仅保存在本机；登录账户后可跨设备自动同步</div>`;
+  }
+  bar.querySelectorAll('.cloud-btn').forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    cloudSyncAll();
+  }));
+}
+
+// 删除课程后清理本机孤儿附件（云端下载的保留）
+async function pruneOrphanFiles() {
+  try {
+    const keys = new Set(courses.map(courseKey));
+    const files = await dbGetAllFiles();
+    const dead = files.filter(f => !f.cloud && !keys.has(fileRecordKey(f)));
+    for (const f of dead) await dbDeleteFile(f.id);
+    if (dead.length) attachCountsDirty = true;
+  } catch (e) { /* IndexedDB 不可用时忽略 */ }
+}
+
+function formatSize(n) {
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(0) + ' KB';
+  return n + ' B';
+}
+function fileIconMeta(name, type) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (ext === 'pdf') return { label: 'PDF', color: '#e74c3c' };
+  if (['ppt', 'pptx'].includes(ext)) return { label: 'PPT', color: '#e67e22' };
+  if (['doc', 'docx', 'txt', 'md'].includes(ext)) return { label: 'DOC', color: '#2980b9' };
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return { label: 'XLS', color: '#27ae60' };
+  if (['zip', 'rar', '7z'].includes(ext)) return { label: 'ZIP', color: '#8e44ad' };
+  if (type.startsWith('image/')) return { label: 'IMG', color: '#16a085' };
+  if (type.startsWith('audio/')) return { label: 'AUD', color: '#d35400' };
+  if (type.startsWith('video/')) return { label: 'VID', color: '#c0392b' };
+  return { label: 'FILE', color: '#7f8c8d' };
+}
+
+let fileSheetCourse = null;
+async function openFileSheet(course) {
+  fileSheetCourse = course;
+  document.getElementById('fileSheetTitle').textContent = `📎 课件文件 — ${course.name}`;
+  document.getElementById('fileOverlay').classList.add('active');
+  await renderFileList();
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+}
+
+async function renderFileList() {
+  const listEl = document.getElementById('fileList');
+  const infoEl = document.getElementById('storageInfo');
+  const files = await dbGetAllFiles();
+  const key = courseKey(fileSheetCourse);
+  const mine = files.filter(f => fileRecordKey(f) === key).sort((a, b) => b.addedAt - a.addedAt);
+
+  if (mine.length === 0) {
+    listEl.innerHTML = `<div class="file-empty">还没有课件文件<br>点击下方按钮选择（PDF / PPT / DOC / 图片等）</div>`;
+  } else {
+    listEl.innerHTML = mine.map(f => {
+      const m = fileIconMeta(f.name, f.type);
+      return `
+      <div class="file-item" data-fid="${f.id}">
+        <div class="file-icon" style="background:${m.color}">${m.label}</div>
+        <div class="file-info">
+          <div class="file-name">${escapeHtml(f.name)}</div>
+          <div class="file-meta">${formatSize(f.size)} · ${new Date(f.addedAt).toLocaleDateString('zh-CN')}</div>
+        </div>
+        <button class="file-del" data-del="${f.id}">✕</button>
+      </div>`;
+    }).join('');
+    listEl.querySelectorAll('.file-item').forEach(el => {
+      el.addEventListener('click', (ev) => {
+        if (ev.target.closest('.file-del')) return;
+        const rec = mine.find(x => x.id === el.dataset.fid);
+        if (rec) openFileBlob(rec);
+      });
+    });
+    listEl.querySelectorAll('.file-del').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        if (!confirm('删除该课件文件？（云端与所有设备都会删除）')) return;
+        const fid = btn.dataset.del;
+        await dbDeleteFile(fid);
+        if (sb && currentUser) {
+          try { await cwDeleteOne(fid); } catch (e) { showToast('⚠️ 云端删除失败：' + e.message); }
+        }
+        attachCountsDirty = true;
+        renderSchedule();
+        await renderFileList();
+      });
+    });
+  }
+
+  if (navigator.storage && navigator.storage.estimate) {
+    const est = await navigator.storage.estimate();
+    infoEl.textContent = `本应用已用 ${formatSize(est.usage || 0)} · 剩余约 ${formatSize((est.quota || 0) - (est.usage || 0))}`;
+  } else {
+    infoEl.textContent = '';
+  }
+  renderCloudBar();
+}
+
+function openFileBlob(rec) {
+  const url = URL.createObjectURL(rec.blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+const filePickInput = document.getElementById('filePickInput');
+document.getElementById('fileAddBtn').addEventListener('click', () => filePickInput.click());
+filePickInput.addEventListener('change', async () => {
+  const files = [...filePickInput.files];
+  filePickInput.value = '';
+  if (!files.length || !fileSheetCourse) return;
+  const records = [];
+  for (const f of files) {
+    if (f.size > 50 * 1024 * 1024) { alert(`"${f.name}" 超过 50MB，已跳过`); continue; }
+    records.push({
+      id: uuid(), courseId: fileSheetCourse.id,
+      fileKey: courseKey(fileSheetCourse),
+      name: f.name, type: f.type || '', size: f.size,
+      blob: f, addedAt: Date.now()
+    });
+  }
+  if (!records.length) return;
+  await dbAddFiles(records);
+  attachCountsDirty = true;
+  renderSchedule();
+  await renderFileList();
+  if (sb && currentUser) {
+    let ok = 0, fail = 0;
+    for (const rec of records) {
+      try { await cwUploadOne(rec); ok++; } catch (e) { fail++; }
+    }
+    if (ok) showToast(`✅ ${ok} 个课件已上传云端，其他设备登录后可同步`);
+    if (fail) showToast('⚠️ 部分课件上传失败（可能超过 50MB 或网络异常）');
+  } else {
+    showToast('📱 课件已保存在本机（登录账户后可云端同步）');
+  }
+});
+document.getElementById('fileCloseBtn').addEventListener('click', () => {
+  document.getElementById('fileOverlay').classList.remove('active');
+  fileSheetCourse = null;
+});
+document.getElementById('fileOverlay').addEventListener('click', (ev) => {
+  if (ev.target === ev.currentTarget) {
+    ev.currentTarget.classList.remove('active');
+    fileSheetCourse = null;
+  }
+});
+
+async function decorateAttachmentBadges() {
+  document.querySelectorAll('.tt-course .cc-file-badge').forEach(el => el.remove());
+  if (attachCountsDirty) {
+    try {
+      const files = await dbGetAllFiles();
+      window._attachCounts = files.reduce((m, f) => {
+        const k = fileRecordKey(f);
+        if (k) m[k] = (m[k] || 0) + 1;
+        return m;
+      }, {});
+      attachCountsDirty = false;
+    } catch (e) { window._attachCounts = {}; }
+  }
+  const counts = window._attachCounts || {};
+  document.querySelectorAll('.tt-course').forEach(el => {
+    const c = el._course;
+    const n = c ? (counts[courseKey(c)] || 0) : 0;
+    if (n > 0) {
+      const b = document.createElement('span');
+      b.className = 'cc-file-badge';
+      b.textContent = '📄' + n;
+      el.appendChild(b);
+    }
+  });
+}
+
+/* ================================================================
    弹出菜单（课表块点击）
 ================================================================ */
 function hidePopup() {
@@ -2355,8 +2721,9 @@ function showPopupCourseMenu(clickEvent, course) {
   const hasUrl = !!(course.url && course.url.trim());
   const weekdayName = ['日','一','二','三','四','五','六'][course.weekday === 7 ? 0 : course.weekday];
   const urlLink = hasUrl
-    ? `<div class="pm-item" data-act="openurl"><span class="pm-icon">🔗</span>打开课件</div>`
+    ? `<div class="pm-item" data-act="openurl"><span class="pm-icon">🔗</span>打开课件链接</div>`
     : `<div class="pm-item" data-act="addurl"><span class="pm-icon">➕</span>添加课件链接</div>`;
+  const fileCount = (window._attachCounts || {})[courseKey(course)] || 0;
 
   menu.innerHTML = `
     <div style="padding:6px 12px 4px;font-size:14px;font-weight:700;color:#2c3e50;">${escapeHtml(course.name)}</div>
@@ -2367,6 +2734,7 @@ function showPopupCourseMenu(clickEvent, course) {
       ${course.instructor ? `<div>教师：${escapeHtml(course.instructor)}</div>` : ''}
       ${course.crn ? `<div>CRN：${escapeHtml(course.crn)}</div>` : ''}
     </div>
+    <div class="pm-item" data-act="files"><span class="pm-icon">📎</span>课件文件${fileCount ? `（${fileCount}）` : ''}</div>
     ${urlLink}
     <div class="pm-item" data-act="edit"><span class="pm-icon">✏️</span>编辑</div>
     <div class="pm-divider"></div>
@@ -2379,7 +2747,9 @@ function showPopupCourseMenu(clickEvent, course) {
     ev.stopPropagation();
     const act = ev.currentTarget.dataset.act;
     hidePopup();
-    if (act === 'openurl') {
+    if (act === 'files') {
+      openFileSheet(course);
+    } else if (act === 'openurl') {
       window.open(course.url, '_blank');
     } else if (act === 'addurl') {
       openModal(null, course);
@@ -3095,8 +3465,8 @@ function openTutorial() {
         <p style="margin:0 0 10px;">工具栏「☰ 更多」菜单可切换/新建/重命名/删除课表。每个课表独立保存到云端。</p>
         <h4 style="margin:10px 0 4px; font-size:15px;">📎 课件文件</h4>
         <p style="margin:0 0 10px;">点击课程块 → 「📎 课件文件」可上传 PDF/图片等。同名课程（如 CSC 1001-L02 的周一/周三）共享同一批课件。</p>
-        <h4 style="margin:10px 0 4px; font-size:15px;">☁️ 云同步</h4>
-        <p style="margin:0 0 10px;">点击「☁️ 云同步」一键上传本地课件并下载云端缺失课件。需先在课件弹窗里配置 GitHub Token。</p>
+        <h4 style="margin:10px 0 4px; font-size:15px;">☁️ 课件云同步</h4>
+        <p style="margin:0 0 10px;">登录账户后，添加的课件自动上传云端，手机 / iPad 登录同一账户自动同步，无需任何配置。在课件弹窗底部可手动「立即同步」。</p>
         <h4 style="margin:10px 0 4px; font-size:15px;">📅 校历设置</h4>
         <p style="margin:0 0 10px;">「☰ 更多」→「📅 校历设置」可添加/删除节假日。校历数据保存在云端，只影响当前账户。</p>
         <h4 style="margin:10px 0 4px; font-size:15px;">🔐 账户与密码</h4>
@@ -3246,12 +3616,15 @@ async function loadAccountData() {
         courses: shouldImport ? [...courses] : [],
         savedAt: Date.now()
       });
+      syncCoursewareFromCloud().catch(() => {});
       return;
     }
     const savedActive = localStorage.getItem(ACTIVE_TT_KEY + currentUser.id);
     const target = timetables.find(t => t.id === savedActive) || timetables[0];
     // 登录/换账号一律以云端为准强制覆盖，避免本机残留上一个账号的课表
     await applyTimetableFromCloud(target, { silent: true });
+    // 拉取该账户云端课件到本机
+    syncCoursewareFromCloud().catch(() => {});
   } catch (e) {
     showToast('⚠️ 云端同步异常：' + (e.message || e));
   }
@@ -3318,6 +3691,7 @@ async function forceRefreshSchedule() {
       showToast('✅ 课表已刷新：' + target.name);
     }
     await loadCalendarFromCloud();
+    await syncCoursewareFromCloud();
   } catch (e) {
     showToast('⚠️ 刷新失败：' + (e.message || e));
   } finally {
