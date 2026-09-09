@@ -1013,6 +1013,18 @@
     <p class="splash-sub" id="splashSub">CUHK-Shenzhen 2026-27</p>
   </div>
 </div>
+<!-- 独立兜底：即使主脚本报错，最多 6 秒也强制隐藏开屏（单独 script 块，不受主脚本语法错误影响） -->
+<script>
+(function () {
+  var forceHide = function () {
+    var s = document.getElementById('splashScreen');
+    if (s) { s.classList.add('hide'); setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 800); }
+  };
+  setTimeout(forceHide, 6000);
+  window.addEventListener('load', function () { setTimeout(forceHide, 2500); });
+  document.addEventListener('DOMContentLoaded', function () { setTimeout(forceHide, 2000); });
+})();
+</script>
 <div class="container">
   <header>
     <h1>📅 我的日历 & 课表</h1>
@@ -1278,8 +1290,8 @@
 /* ================================================================
    基础数据
 ================================================================ */
-const APP_VERSION = '2.11.1';
-const APP_VERSION_CODE = 49;
+const APP_VERSION = '2.11.2';
+const APP_VERSION_CODE = 50;
 const VERSION_CHECK_URL = './version.json';
 const STORAGE_KEY = 'calendar_events_v5';
 /* 账户系统（Supabase）——部署时填入项目 URL 和 anon key；未填则自动跳过账户功能 */
@@ -1313,6 +1325,10 @@ let undoStack = [];
 
 // 更新日志
 const CHANGELOG = [
+  { version: 'v2.11.2', date: '2026-09-09', items: [
+    '🐛 紧急修复：上一版一处语法错误导致开屏卡死',
+    '🛡 新增独立兜底脚本：即使主脚本异常，开屏最多 6 秒自动消失'
+  ]},
   { version: 'v2.11.1', date: '2026-09-09', items: [
     '👥 用户管理从留言板底部移至「☰ 更多」菜单',
     '🪟 用户管理改为独立弹窗，不再被留言板轮询打断',
@@ -4677,7 +4693,8 @@ async function adminViewUserTimetablesInModal(user, body) {
         <div style="display:flex; gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch;">${dayCols}</div>
         ${evList ? `<div style="margin-top:10px;"><div style="font-size:12px; font-weight:700; color:#e8871e; margin-bottom:3px;">📅 考试 / 事项</div>${evList}</div>` : ''}
       </div>`;
-  }).join('');
+  };
+  body.innerHTML = tts.map(renderTT).join('');
 }
 
 /* ================================================================
